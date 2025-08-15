@@ -52,8 +52,6 @@ const generateState = () => {
 
   // Clean up old states to prevent localStorage from filling up
   cleanupOldStates();
-
-  console.log('Generated OAuth state:', state);
   return state;
 };
 
@@ -142,4 +140,37 @@ export const initiateGithubAuth = () => {
 
   // Redirect to GitHub OAuth page
   window.location.href = `https://github.com/login/oauth/authorize?${params}`;
+};
+
+export const handleGoogleOneTapAuth = async (credential) => {
+  try {
+    if (!credential) {
+      throw new Error('Google One Tap credential is required');
+    }
+    const response = await authAPI.googleOneTap(credential);
+
+    // Consistent success handling
+    if (response.success) {
+      // Normalize user data access (handle both response.user and response.data.user)
+      const userData = response.user || response.data?.user;
+      
+      if (!userData) {
+        throw new Error('No user data received from authentication');
+      }
+      setUser(userData);
+      sessionStorage.removeItem('auth_logged_out');
+      return { success: true, user: userData };
+    } else {
+      // If response.success is false, treat as error
+      throw new Error(response.error || response.message || 'Authentication failed');
+    }
+
+  } catch (error) {
+    console.error(`Google One Tap login failed:`, error);
+    const errorMessage = error.error || error.message || 'Login failed';
+    setError(errorMessage);
+    return { success: false, error: errorMessage };
+  } finally {
+    setLoading(false);
+  }
 };

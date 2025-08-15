@@ -30,6 +30,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
 } from 'react';
 import { authAPI } from '../services/api';
 
@@ -108,41 +109,12 @@ export const AuthProvider = ({ children }) => {
    */
   const [error, setError] = useState(null);
 
-  // Check if user is logged in on app start
-  useEffect(() => {
-    checkAuthStatus();
-  }, []);
-
-  // Listen for authentication failures from API interceptors
-  //
-  // Why this useEffect is necessary:
-  // When a user's session expires, it doesn't happen during login - it happens during
-  // normal API calls throughout the app. The API interceptor (in api.js) tries to
-  // refresh the token, and if that fails, it dispatches an 'auth-failure' event.
-  //
-  // Without this listener:
-  // - User's session expires silently
-  // - API calls fail but user state stays "logged in"
-  // - User sees confusing "authenticated but API failing" state
-  //
-  // With this listener:
-  // - Session expiry is detected automatically
-  // - User is logged out immediately with clear error message
-  // - Creates communication bridge between API layer and Auth Context
-  useEffect(() => {
-    const handleAuthFailure = () => {
-      setUser(null);
-      setError('Session expired. Please log in again.');
-      setLoading(false); // Ensure loading is set to false
-    };
-
-    // Listen for custom auth failure events from API interceptors
-    window.addEventListener('auth-failure', handleAuthFailure);
-
-    return () => {
-      window.removeEventListener('auth-failure', handleAuthFailure);
-    };
-  }, []);
+  // Used to prevent unnecessary auth checks
+  // and to ensure certain operations only happen after 
+  // the auth state is known. 
+  // It's a ref instead of state to avoid
+  // triggering re-renders when it changes.
+  const isInitialized = useRef(false);
 
   /**
    * Check authentication status using HTTP-only cookies
@@ -164,66 +136,74 @@ export const AuthProvider = ({ children }) => {
   // 2. It's passed to child components
   // Without useCallback, a new function would be created on each render,
   // which could cause unnecessary re-renders or effect re-runs
+  // Track if we've already checked auth status to prevent multiple checks
+
   const checkAuthStatus = useCallback(async () => {
     try {
+      setLoading(true);
       const response = await authAPI.getMe();
-      if (response.success) {
+      
+      if (response.data) {
         setUser(response.data);
+        return response.data;
+      } else {
+        setUser(null);
+        return null;
       }
     } catch (error) {
-      console.error('Auth check failed:', error);
       setUser(null);
+      return null;
     } finally {
       setLoading(false);
+      isInitialized.current = true;
     }
   }, []);
 
-  /**
-   * Universal login handler - handles both redirect and credential flows
-   *
-   * Two types of login:
-   * 1. Redirect-based OAuth (Google/GitHub): Redirects to provider
-   * 2. Credential-based (Google One Tap): Sends credential to backend
-   *
-   * @param {string} provider - 'google' | 'github' | 'google-one-tap'
-   * @param {string} [credential] - Only needed for Google One Tap
-   */
-  const login = async (provider, credential = null) => {
-    setLoading(true);
-    setError(null);
+  // Check if user is logged in on app start
+  useEffect(() => {
+    checkAuthStatus();
+  }, []);
 
-    try {
-      // Handle credential-based login (Google One Tap)
-      if (provider === 'google-one-tap' && credential) {
-        const response = await authAPI.googleOneTap(credential);
-        if (response.success) {
-          setUser(response.user);
-          setLoading(false); // Set loading false after successful credential login
-          return { success: true };
-        }
-      }
-      // Handle redirect-based OAuth (Google/GitHub standard flow)
-      else if (provider === 'google') {
-        // Import here to avoid circular dependency
-        const { initiateGoogleAuth } = await import('../utils/oauth');
-        setLoading(false); // Reset loading before redirect to avoid persistent loading state
-        initiateGoogleAuth(); // This redirects immediately
-        return { success: true, redirected: true };
-      } else if (provider === 'github') {
-        const { initiateGithubAuth } = await import('../utils/oauth');
-        setLoading(false); // Reset loading before redirect to avoid persistent loading state
-        initiateGithubAuth(); // This redirects immediately
-        return { success: true, redirected: true };
-      } else {
-        throw new Error('Unsupported OAuth provider');
-      }
-    } catch (error) {
-      console.error('Login failed:', error);
-      setError(error.error || error.message || 'Login failed');
-      setLoading(false); // Set loading false on any error
-      return { success: false, error: error.error || error.message };
-    }
-  };
+  // Listen for authentication failures from API interceptors
+  //
+  // Why this useEffect is necessary:
+  // When a user's session expires, it doesn't happen during login - it happens during
+  // normal API calls throughout the app. The API interceptor (in api.js) tries to
+  // refresh the token, and if that fails, it dispatches an 'auth-failure' event.
+  //
+  // Without this listener:
+  // - User's session expires silently
+  // - API calls fail but user state stays "logged in"
+  // - User sees confusing "authenticated but API failing" state
+  //
+  // With this listener:
+  // - Session expiry is detected automatically
+  // - User is logged out immediately with clear error message
+  // - Creates communication bridge between API layer and Auth Context
+
+  /**
+   * The cleanup function 'removeEventListener' runs when the component unmounts, ensuring that event listeners are properly removed to prevent memory leaks.
+   * Component unmounting happens in React when:
+   *   1.The component is removed from the DOM (e.g., when navigating to a different route)
+   *   2.A parent component stops rendering the component
+   *   3. The application is closed/refreshed
+   */
+
+  useEffect(() => {
+    const handleAuthFailure = () => {
+      setUser(null);
+      setError('Session expired. Please log in again.');
+      setLoading(false); // Ensure loading is set to false
+      isInitialized.current = true; // Ensure we're marked as initialized
+    };
+
+    // Listen for custom auth failure events from API interceptors
+    window.addEventListener('auth-failure', handleAuthFailure);
+
+    return () => {
+      window.removeEventListener('auth-failure', handleAuthFailure);
+    };
+  }, []);
 
   /**
    * Logout and clean up user session (Cookie-based)
@@ -247,6 +227,8 @@ export const AuthProvider = ({ children }) => {
     } finally {
       // Only need to clear user state - cookies are cleared by backend
       setUser(null);
+      sessionStorage.setItem('auth_logged_out', 'true');
+      isInitialized.current = true; // Ensure we stay initialized
     }
   };
 
@@ -339,7 +321,6 @@ export const AuthProvider = ({ children }) => {
     user,
     loading,
     error,
-    login,
     logout,
     clearError,
     refreshToken,

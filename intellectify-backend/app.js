@@ -22,6 +22,7 @@
  */
 require('dotenv').config();
 const express = require('express');
+const helmet = require('helmet');
 const cors = require('cors');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
@@ -120,6 +121,33 @@ app.use(cors(corsOptions));
 
 // Parse cookies
 app.use(cookieParser());
+
+// Add security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: [
+        "'self'", 
+        "https://accounts.google.com", 
+        "https://apis.google.com"
+      ],
+      frameSrc: [
+        "'self'", 
+        "https://accounts.google.com"
+      ],
+      connectSrc: [
+        "'self'", 
+        "https://accounts.google.com"
+      ]
+    }
+  },
+  permissionsPolicy: {
+    features: {
+      "identity-credentials-get": ["'self'", "https://accounts.google.com"]
+    }
+  }
+}));
 
 // Parse incoming JSON requests
 app.use(express.json());

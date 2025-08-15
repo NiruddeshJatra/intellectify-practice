@@ -42,13 +42,6 @@ export const AUTH_CONFIG = {
 
   // Frontend URL
   frontendUrl: import.meta.env.VITE_FRONTEND_URL || 'http://localhost:5173',
-
-  // Cookie settings (informational - actual settings are on backend)
-  cookieSettings: {
-    httpOnly: true, // Set by backend
-    secure: isProduction, // Set by backend
-    sameSite: 'lax', // Set by backend
-  },
 };
 
 // App Configuration
@@ -59,7 +52,6 @@ export const APP_CONFIG = {
   // Feature flags
   features: {
     googleOneTap: true,
-    serviceWorker: false, // Disabled by default
     errorBoundary: true,
     devTools: isDevelopment,
   },
@@ -85,28 +77,6 @@ export const ROUTES = {
   googleCallback: '/auth/google/callback',
   githubCallback: '/auth/github/callback',
 };
-
-// Validation
-const validateConfig = () => {
-  const errors = [];
-
-  if (!AUTH_CONFIG.googleClientId) {
-    errors.push('VITE_GOOGLE_CLIENT_ID is not configured');
-  }
-
-  if (!AUTH_CONFIG.githubClientId) {
-    errors.push('VITE_GITHUB_CLIENT_ID is not configured');
-  }
-
-  if (errors.length > 0 && isDevelopment) {
-    console.warn('Configuration warnings:', errors);
-  }
-
-  return errors.length === 0;
-};
-
-// Validate configuration on import
-validateConfig();
 
 export default {
   API_CONFIG,

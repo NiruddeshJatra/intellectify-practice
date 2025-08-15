@@ -13,7 +13,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { cleanupOldStates } from '../../utils/oauth';
 import { ROUTES } from '../../config/app';
 import {
   Box,
@@ -37,25 +36,21 @@ const AuthCallback = () => {
   useEffect(() => {
     const processCallback = async () => {
       try {
-        // Step 1: Clean up old OAuth states from localStorage
-        cleanupOldStates();
-
-        // Step 2: Parse URL parameters to see what happened
+        // Step 1: Parse URL parameters to see what happened
         // Backend redirects here with either success=true or error=message
         const urlParams = new URLSearchParams(window.location.search);
         const success = urlParams.get('success');
         const error = urlParams.get('error');
 
-        // Step 3: Handle error case
+        // Step 2: Handle error case
         if (error) {
+          const errorMessage = decodeURIComponent(error);
           setStatus('error');
-          // decodeURIComponent converts URL-encoded text back to readable text
-          // "Invalid%20OAuth%20state" becomes "Invalid OAuth state"
-          setMessage(`Authentication failed: ${decodeURIComponent(error)}`);
+          setMessage(`Authentication failed: ${errorMessage}`);
           return;
         }
 
-        // Step 4: Handle success case
+        // Step 3: Handle success case
         if (success === 'true') {
           // Case A: User is already authenticated (rare, but possible)
           if (user) {
@@ -68,25 +63,35 @@ const AuthCallback = () => {
           }
           // Case B: Backend set cookies, but frontend doesn't have user data yet
           else {
-            // Call checkAuthStatus to fetch user data from backend
-            // This uses the cookies that backend just set
-            await checkAuthStatus();
-            setStatus('success');
-            setMessage('Login successful!');
-            // Slightly longer delay to show success message
-            setTimeout(() => {
-              navigate(ROUTES.dashboard);
-            }, 1500);
+            try {
+              // Call checkAuthStatus to fetch user data from backend
+              // This uses the cookies that backend just set
+              const userData = await checkAuthStatus();
+              
+              if (userData) {
+                setStatus('success');
+                setMessage('Login successful!');
+                
+                // Slightly longer delay to show success message
+                setTimeout(() => {
+                  navigate(ROUTES.dashboard);
+                }, 1500);
+              } else {
+                setStatus('error');
+                setMessage('Failed to authenticate. Please try again.');
+              }
+            } catch (authError) {
+              setStatus('error');
+              setMessage('Failed to verify authentication. Please try again.');
+            }
           }
         }
-        // Step 5: Handle invalid callback (no success or error parameter)
+        // Step 4: Handle invalid callback (no success or error parameter)
         else {
           setStatus('error');
           setMessage('Invalid callback parameters');
         }
       } catch (error) {
-        // Step 6: Handle any unexpected errors
-        console.error('Auth callback error:', error);
         setStatus('error');
         setMessage('An error occurred during authentication');
       }
@@ -94,8 +99,8 @@ const AuthCallback = () => {
 
     // Run the callback processing when component mounts
     processCallback();
-  }, [checkAuthStatus, navigate, user]); // Re-run if these dependencies change
-
+  }, [checkAuthStatus, navigate, user]);
+  
   // Render different UI based on current status
   // This function returns the appropriate JSX for each state
   const renderContent = () => {

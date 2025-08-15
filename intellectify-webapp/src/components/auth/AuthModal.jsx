@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { initiateGoogleAuth, initiateGithubAuth } from '../../utils/oauth';
 import {
   Modal,
   Box,
@@ -15,15 +16,16 @@ import {
 import { Google, GitHub, Close } from '@mui/icons-material';
 
 const AuthModal = ({ open, onClose }) => {
-  const { login, loading, error, clearError } = useAuth();
+  const { loading, error, clearError } = useAuth();
   const [googleLoading, setGoogleLoading] = useState(false);
   const [githubLoading, setGithubLoading] = useState(false);
 
   const handleClose = () => {
     if (error) {
       clearError();
+    } else {
+      onClose();
     }
-    onClose();
   };
 
   const modalStyle = {
@@ -41,12 +43,9 @@ const AuthModal = ({ open, onClose }) => {
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     try {
-      console.log('Initiating Google OAuth...');
-      const result = await login('google');
-      if (result.redirected) {
-        // Redirect successful - loading state will be cleared by page navigation
-        console.log('Redirecting to Google OAuth...');
-      }
+      console.log('Redirecting to Google OAuth...');
+      // This will redirect to Google OAuth page
+      initiateGoogleAuth();
     } catch (err) {
       console.error('Google auth error:', err);
       setGoogleLoading(false);
@@ -56,12 +55,9 @@ const AuthModal = ({ open, onClose }) => {
   const handleGithubLogin = async () => {
     setGithubLoading(true);
     try {
-      console.log('Initiating GitHub OAuth...');
-      const result = await login('github');
-      if (result.redirected) {
-        // Redirect successful - loading state will be cleared by page navigation
-        console.log('Redirecting to GitHub OAuth...');
-      }
+      console.log('Redirecting to GitHub OAuth...');
+      // This will redirect to GitHub OAuth page
+      initiateGithubAuth();
     } catch (err) {
       console.error('GitHub auth error:', err);
       setGithubLoading(false);
@@ -69,7 +65,10 @@ const AuthModal = ({ open, onClose }) => {
   };
 
   return (
-    <Modal open={open} onClose={handleClose}>
+    <Modal 
+      open={open} 
+      onClose={handleClose}
+    >
       <Box sx={modalStyle}>
         <Card>
           <CardContent sx={{ p: 3 }}>
@@ -86,9 +85,10 @@ const AuthModal = ({ open, onClose }) => {
                 Sign in to Intellectify
               </Typography>
               <IconButton
-                onClick={onClose}
+                onClick={handleClose}
                 size="small"
                 disabled={loading || googleLoading || githubLoading}
+                sx={{ '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' } }}
               >
                 <Close />
               </IconButton>
@@ -127,7 +127,7 @@ const AuthModal = ({ open, onClose }) => {
                   },
                 }}
               >
-                {googleLoading ? 'Redirecting...' : 'Continue with Google'}
+                {googleLoading ? 'Redirecting to Google...' : 'Continue with Google'}
               </Button>
 
               <Divider>
@@ -160,7 +160,7 @@ const AuthModal = ({ open, onClose }) => {
                   },
                 }}
               >
-                {githubLoading ? 'Redirecting...' : 'Continue with GitHub'}
+                {githubLoading ? 'Redirecting to GitHub...' : 'Continue with GitHub'}
               </Button>
             </Box>
 

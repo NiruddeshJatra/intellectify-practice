@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum Role {
+  ADMIN
+  REGULAR
+  MENTOR
+}
+
+enum OAuthProvider {
+  GOOGLE
+  GITHUB
+}
+
+// Why a separate RefreshToken model?
+//
+// 1. Security & Token Management:
+//    - Track and revoke specific tokens if compromised
+//    - Force logout from specific devices
+//    - Prevent token reuse attacks
+//    - Implement token rotation
+//
+// 2. Multiple Device Support:
+//    - Users can login from multiple devices
+//    - Each device gets unique refresh token
+//    - Revoke access per device
+//    - Track active sessions
+//
+// 3. Security Monitoring:
+//    - Track login patterns
+//    - Detect suspicious activities
+//    - Audit user sessions
+//    - Monitor device usage
+//
+// Example: If user's phone is stolen:
+//   - Can revoke just that device's token
+//   - Other devices stay logged in
+//   - User remains secure
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  token     String    @unique  // Hashed token value
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent String?   // Browser/device info for session management
+  expiresAt DateTime  // When this refresh token becomes invalid
+  revokedAt DateTime? // Track if token was manually revoked (e.g., on logout)
+  createdAt DateTime  @default(now())
+
+  // Index on userId for faster queries when managing user's sessions
+  @@index([userId])
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String   // Full name from OAuth
+  avatar    String?  // Profile picture URL from OAuth
+  role      Role     @default(REGULAR)
+
+  // OAuth info (stored directly in user for simplicity)
+  provider          OAuthProvider
+  
+  // Refresh tokens relation
+  refreshTokens     RefreshToken[]
+  providerAccountId String // OAuth provider's user ID (google ID or github ID)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider, providerAccountId]) // Prevent duplicate OAuth accounts
+  @@map("users")
+}

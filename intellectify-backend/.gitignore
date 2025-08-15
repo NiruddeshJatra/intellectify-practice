@@ -1,0 +1,7 @@
+.env
+node_modules/
+.vscode/
+.husky/
+.kiro/
+
+/generated/prisma

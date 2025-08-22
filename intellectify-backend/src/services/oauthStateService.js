@@ -16,7 +16,6 @@ const crypto = require('crypto');
  * - Ensures the OAuth callback is from a legitimate request
  * - Validates the request originated from our frontend
  */
-
 class OAuthStateService {
   /**
    * Validates OAuth state parameter

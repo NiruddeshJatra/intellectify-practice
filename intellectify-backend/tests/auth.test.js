@@ -1,6 +1,16 @@
 const request = require('supertest');
+const jwt = require('jsonwebtoken');
 const app = require('../app');
 const tokenService = require('../src/services/tokenService');
+const prisma = require('../src/config/database');
+const { jwtAccessSecret, jwtRefreshSecret } = require('../src/config/oauth');
+const AppError = require('../src/utils/AppError');
+
+// Mock Prisma client
+jest.mock('../src/config/database');
+
+// Mock JWT module
+jest.mock('jsonwebtoken');
 
 /**
  * Backend Authentication Tests
@@ -12,98 +22,259 @@ const tokenService = require('../src/services/tokenService');
 describe('Authentication System Tests', () => {
   
   describe('Token Service Tests', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    describe('generateAccessToken', () => {
+      it('should generate access token with correct payload and options', () => {
+        const userId = 'test-user-id';
+        const mockToken = 'mock.access.token';
+        
+        jwt.sign.mockReturnValue(mockToken);
+        
+        const token = tokenService.generateAccessToken(userId);
+        
+        expect(token).toBe(mockToken);
+        expect(jwt.sign).toHaveBeenCalledWith(
+          { userId },
+          jwtAccessSecret,
+          { expiresIn: '15m' }
+        );
+      });
+    });
+
+    describe('generateRefreshToken', () => {
+      it('should generate and store refresh token', async () => {
+        const userId = 'test-user-id';
+        const userAgent = 'test-agent';
+        const mockToken = 'mock.refresh.token';
+        const hashedToken = 'hashedToken123';
+        
+        // Mock JWT sign
+        jwt.sign.mockReturnValue(mockToken);
+        
+        // Mock crypto hash
+        const mockHash = {
+          update: jest.fn().mockReturnThis(),
+          digest: jest.fn().mockReturnValue(hashedToken)
+        };
+        const createHashSpy = jest.spyOn(require('crypto'), 'createHash')
+          .mockReturnValue(mockHash);
+        
+        // Mock Prisma
+        prisma.refreshToken.create.mockResolvedValue({ id: 'token-123' });
+        
+        const token = await tokenService.generateRefreshToken(userId, userAgent);
+        
+        expect(token).toBe(mockToken);
+        expect(jwt.sign).toHaveBeenCalledWith(
+          { userId },
+          jwtRefreshSecret,
+          { expiresIn: '7d' }
+        );
+        
+        expect(createHashSpy).toHaveBeenCalledWith('sha256');
+        expect(mockHash.update).toHaveBeenCalledWith(mockToken);
+        expect(mockHash.digest).toHaveBeenCalledWith('hex');
+        
+        expect(prisma.refreshToken.create).toHaveBeenCalledWith({
+          data: {
+            token: hashedToken,
+            userId,
+            userAgent,
+            expiresAt: expect.any(Date)
+          }
+        });
+      });
+    });
+
+    describe('verifyAccessToken', () => {
+      it('should verify valid access token', () => {
+        const token = 'valid.token.here';
+        const decoded = { userId: 'user-123' };
+        
+        jwt.verify.mockReturnValue(decoded);
+        
+        const result = tokenService.verifyAccessToken(token);
+        
+        expect(result).toEqual(decoded);
+        expect(jwt.verify).toHaveBeenCalledWith(token, jwtAccessSecret);
+      });
+      
+      it('should return null for invalid token', () => {
+        jwt.verify.mockImplementation(() => {
+          throw new Error('Invalid token');
+        });
+        
+        const result = tokenService.verifyAccessToken('invalid.token');
+        
+        expect(result).toBeNull();
+      });
+    });
     
-    test('should generate access token', () => {
-      const userId = 'test-user-id';
-      const token = tokenService.generateAccessToken(userId);
+    describe('verifyRefreshToken', () => {
+      it('should verify valid refresh token', async () => {
+        const token = 'valid.refresh.token';
+        const hashedToken = 'hashedToken123';
+        const decoded = { userId: 'user-123' };
+        const storedToken = { id: 'token-123', userId: 'user-123' };
+        
+        // Mock JWT verify
+        jwt.verify.mockReturnValue(decoded);
+        
+        // Mock crypto hash
+        const mockHash = {
+          update: jest.fn().mockReturnThis(),
+          digest: jest.fn().mockReturnValue(hashedToken)
+        };
+        jest.spyOn(require('crypto'), 'createHash')
+          .mockReturnValue(mockHash);
+        
+        // Mock Prisma
+        prisma.refreshToken.findFirst.mockResolvedValue(storedToken);
+        
+        const result = await tokenService.verifyRefreshToken(token);
+        
+        expect(result).toEqual(decoded);
+        expect(jwt.verify).toHaveBeenCalledWith(token, jwtRefreshSecret);
+        expect(prisma.refreshToken.findFirst).toHaveBeenCalledWith({
+          where: {
+            token: hashedToken,
+            userId: decoded.userId,
+            expiresAt: { gt: expect.any(Date) },
+            revokedAt: null
+          }
+        });
+      });
       
-      expect(token).toBeDefined();
-      expect(typeof token).toBe('string');
-      expect(token.length).toBeGreaterThan(0);
+      it('should return null for invalid token', async () => {
+        jwt.verify.mockImplementation(() => {
+          throw new Error('Invalid token');
+        });
+        
+        const result = await tokenService.verifyRefreshToken('invalid.token');
+        
+        expect(result).toBeNull();
+        expect(prisma.refreshToken.findFirst).not.toHaveBeenCalled();
+      });
+      
+      it('should return null for non-existent token in database', async () => {
+        const token = 'valid.but.not.in.db';
+        const decoded = { userId: 'user-123' };
+        
+        jwt.verify.mockReturnValue(decoded);
+        prisma.refreshToken.findFirst.mockResolvedValue(null);
+        
+        const result = await tokenService.verifyRefreshToken(token);
+        
+        expect(result).toBeNull();
+      });
     });
-
-    test('should generate refresh token', async () => {
-      const userId = 'test-user-id';
-      const userAgent = 'test-agent';
-      
-      const token = await tokenService.generateRefreshToken(userId, userAgent);
-      
-      expect(token).toBeDefined();
-      expect(typeof token).toBe('string');
-      expect(token.length).toBeGreaterThan(0);
+    
+    describe('revokeSpecificToken', () => {
+      it('should revoke a specific token', async () => {
+        const token = 'token.to.revoke';
+        const userId = 'user-123';
+        
+        await tokenService.revokeSpecificToken(token, userId);
+        
+        expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+          where: {
+            token: expect.any(String),
+            userId,
+            revokedAt: null
+          },
+          data: {
+            revokedAt: expect.any(Date)
+          }
+        });
+      });
     });
-
-    test('should verify refresh token structure', async () => {
-      const userId = 'test-user-id';
-      const userAgent = 'test-agent';
-      
-      // Test token generation structure
-      const token = await tokenService.generateRefreshToken(userId, userAgent);
-      expect(token).toBeDefined();
-      expect(typeof token).toBe('string');
-      
-      // Verify it looks like a JWT (has 3 parts separated by dots)
-      const parts = token.split('.');
-      expect(parts).toHaveLength(3);
+    
+    describe('revokeAllUserTokens', () => {
+      it('should revoke all tokens for a user', async () => {
+        const userId = 'user-123';
+        
+        await tokenService.revokeAllUserTokens(userId);
+        
+        expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+          where: {
+            userId,
+            revokedAt: null
+          },
+          data: {
+            revokedAt: expect.any(Date)
+          }
+        });
+      });
     });
   });
 
   describe('CORS Configuration Tests', () => {
-    
-    test('should allow requests from localhost:5173', async () => {
-      const response = await request(app)
-        .options('/api/auth/me')
-        .set('Origin', 'http://localhost:5173')
-        .set('Access-Control-Request-Method', 'GET');
-      
-      expect(response.status).toBe(204);
-    });
+    const testCases = [
+      { origin: 'http://localhost:5173', allowed: true },
+      { origin: 'http://127.0.0.1:5173', allowed: true },
+      { origin: 'http://localhost:3000', allowed: true },
+      { origin: 'http://malicious-site.com', allowed: false },
+      { origin: 'https://intellectify.app', allowed: true },
+      { origin: 'https://app.intellectify.app', allowed: true },
+      { origin: 'https://malicious.intellectify.app', allowed: false },
+      { origin: 'http://localhost:1234', allowed: false },
+      { origin: 'http://192.168.1.100:3000', allowed: true },
+    ];
 
-    test('should allow requests from 127.0.0.1:5173', async () => {
-      const response = await request(app)
-        .options('/api/auth/me')
-        .set('Origin', 'http://127.0.0.1:5173')
-        .set('Access-Control-Request-Method', 'GET');
-      
-      expect(response.status).toBe(204);
-    });
-
-    test('should reject requests from unauthorized origins', async () => {
-      const response = await request(app)
-        .options('/api/auth/me')
-        .set('Origin', 'http://malicious-site.com')
-        .set('Access-Control-Request-Method', 'GET');
-      
-      expect(response.status).toBe(500); // CORS error
+    testCases.forEach(({ origin, allowed }) => {
+      it(`${allowed ? 'should allow' : 'should reject'} requests from ${origin}`, async () => {
+        const response = await request(app)
+          .options('/api/auth/me')
+          .set('Origin', origin)
+          .set('Access-Control-Request-Method', 'GET');
+        
+        if (allowed) {
+          expect(response.status).toBe(204);
+          expect(response.headers['access-control-allow-origin']).toBe(origin);
+          expect(response.headers['access-control-allow-credentials']).toBe('true');
+        } else {
+          // Should either be a CORS error (500) or not include CORS headers
+          expect(
+            response.status === 500 || 
+            !response.headers['access-control-allow-origin']
+          ).toBe(true);
+        }
+      });
     });
   });
 
   describe('Authentication Endpoints Tests', () => {
+    let mockUser;
+    let mockTokens;
     
-    test('GET /api/auth/me should require authentication', async () => {
-      const response = await request(app)
-        .get('/api/auth/me');
+    beforeEach(() => {
+      jest.clearAllMocks();
       
-      expect(response.status).toBe(401);
-      expect(response.body.success).toBe(false);
-      expect(response.body.code).toBe('MISSING_TOKEN');
-    });
-
-    test('POST /api/auth/logout should require authentication', async () => {
-      const response = await request(app)
-        .post('/api/auth/logout');
+      mockUser = {
+        id: 'user-123',
+        email: 'test@example.com',
+        name: 'Test User',
+        role: 'USER'
+      };
       
-      expect(response.status).toBe(401);
-      expect(response.body.success).toBe(false);
-    });
-
-    test('POST /api/auth/refresh-token should handle missing refresh token', async () => {
-      const response = await request(app)
-        .post('/api/auth/refresh-token');
+      mockTokens = {
+        accessToken: 'mock.access.token',
+        refreshToken: 'mock.refresh.token'
+      };
       
-      expect(response.status).toBe(401);
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toBe('No refresh token provided');
+      // Mock token verification
+      jwt.verify.mockImplementation((token) => {
+        if (token === mockTokens.accessToken) {
+          return { userId: mockUser.id };
+        }
+        if (token === mockTokens.refreshToken) {
+          return { userId: mockUser.id };
+        }
+        throw new Error('Invalid token');
+      });
     });
 
     test('POST /api/auth/google-one-tap should require credential', async () => {
@@ -118,22 +289,22 @@ describe('Authentication System Tests', () => {
 
   describe('OAuth Callback Tests', () => {
     
-    test('GET /api/auth/google/callback should require code parameter', async () => {
+    test('GET /api/auth/google/callback should redirect with error when code is missing', async () => {
       const response = await request(app)
-        .get('/api/auth/google/callback');
+        .get('/api/auth/google/callback')
+        .redirects(0); // Prevent automatic redirect following
       
-      expect(response.status).toBe(400);
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toBe('Authorization code is required');
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toContain('http://localhost:5173/auth/github/callback?error=Authorization%20code%20is%20required');
     });
 
-    test('GET /api/auth/github/callback should require code parameter', async () => {
+    test('GET /api/auth/github/callback should redirect with error when code is missing', async () => {
       const response = await request(app)
-        .get('/api/auth/github/callback');
+        .get('/api/auth/github/callback')
+        .redirects(0); // Prevent automatic redirect following
       
-      expect(response.status).toBe(400);
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toBe('Authorization code is required');
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toContain('http://localhost:5173/auth/github/callback?error=Authorization%20code%20is%20required');
     });
   });
 

@@ -25,8 +25,44 @@ jest.mock('@prisma/client', () => ({
       update: jest.fn(),
       updateMany: jest.fn(),
     },
+    content: {
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+      deleteMany: jest.fn(),
+    },
     $disconnect: jest.fn(),
   })),
+}));
+
+// Mock database config
+jest.mock('../src/config/database', () => ({
+  user: {
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
+  refreshToken: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  content: {
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    findMany: jest.fn(),
+    count: jest.fn(),
+    deleteMany: jest.fn(),
+  },
+  $disconnect: jest.fn(),
 }));
 
 // Global test utilities

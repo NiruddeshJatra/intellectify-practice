@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
 const crypto = require('crypto');
 const { jwtAccessSecret, jwtRefreshSecret, nodeEnv } = require('../config/oauth');
+const AppError = require('../utils/AppError');
 
 const ACCESS_TOKEN_EXPIRY = '15m';  // 15 minutes
 const REFRESH_TOKEN_EXPIRY = '7d';  // 7 days
@@ -116,7 +117,7 @@ const rotateRefreshToken = async (userId, oldRefreshToken, userAgent) => {
     });
 
     if (!token) {
-      throw new Error('Invalid or expired refresh token');
+      throw new AppError('Invalid or expired refresh token', 401, 'INVALID_REFRESH_TOKEN');
     }
 
     // 3. Revoke the old refresh token

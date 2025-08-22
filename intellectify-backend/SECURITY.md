@@ -1,16 +1,118 @@
-# Security Implementation Documentation
-
-This document outlines the comprehensive security measures implemented for the Content Writing System.
+# 🔒 Security Implementation
 
 ## Overview
 
-The security implementation includes multiple layers of protection:
+This document details the security measures implemented in the Intellectify backend, covering authentication, authorization, data protection, and secure coding practices.
 
-1. **Admin-only endpoint protection middleware**
-2. **Content ownership validation for edit/delete operations**
-3. **Input sanitization for rich text content to prevent XSS**
-4. **Comprehensive error handling for all admin and content endpoints**
-5. **File upload security validation (file type, size limits)**
+## 🔐 Authentication
+
+### JWT Authentication
+- **Token-based authentication** using JSON Web Tokens (JWT)
+- **Dual-token system**: Access token (15min) and Refresh token (7 days)
+- **Secure storage**: HTTP-only, same-site cookies for both tokens
+- **Token validation**: Signature verification and expiration checks
+- **Token refresh**: Secure refresh token rotation
+
+### OAuth 2.0 Integration
+- **Google OAuth 2.0** with state parameter validation
+- **GitHub OAuth** with state parameter validation
+- **Secure callback handling** with CSRF protection
+- **Automatic user creation** for new OAuth users
+
+### Admin Authentication
+- **Email/Password authentication** for admin users
+- **Role-based access control** (RBAC) with 'ADMIN' role
+- **Rate limiting**: 100 requests/15 minutes for admin endpoints
+- **Secure password hashing** with bcrypt (12 rounds)
+- **Account lockout** after multiple failed attempts
+
+## 🛡️ Authorization
+
+### Role-Based Access Control (RBAC)
+- **ADMIN**: Full system access (content management, user management)
+- **User**: Access to published content, own profile management
+
+### Endpoint Protection
+- **Authentication middleware** for protected routes
+- **Admin-only middleware** for admin endpoints
+- **Content ownership validation** for modifications
+- **Rate limiting** on sensitive endpoints
+
+## 🛡️ Data Protection
+
+### Input Validation & Sanitization
+- **Request validation** using custom validators
+- **HTML sanitization** for rich text content (DOMPurify)
+- **File type validation** for uploads (JPG, PNG, GIF, WebP)
+- **File size limits** (5MB per file)
+- **Parameter sanitization** to prevent injection attacks
+
+### Security Headers
+- **Strict-Transport-Security (HSTS)**
+- **X-Content-Type-Options: nosniff**
+- **X-Frame-Options: DENY**
+- **X-XSS-Protection: 1; mode=block**
+- **Content-Security-Policy** with strict directives
+- **Referrer-Policy: strict-origin-when-cross-origin**
+- **X-Frame-Options: DENY**
+- **X-XSS-Protection: 1; mode=block**
+- **Referrer-Policy: strict-origin-when-cross-origin**
+
+### File Upload Security
+- **File type verification** (whitelist approach)
+- **File size limits** (configurable)
+- **Malware scanning** (if integrated with antivirus)
+- **Content-Disposition headers** for secure file downloads
+- **Virus scanning** for uploaded files
+
+## 🔄 Session Management
+
+### Secure Session Configuration
+- **HTTP-only cookies** for token storage
+- **Secure flag** for HTTPS-only transmission
+- **SameSite=Lax** to prevent CSRF
+- **Token expiration** and automatic renewal
+- **Concurrent session control**
+
+## 🚨 Security Headers
+
+All responses include the following security headers:
+
+```http
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-XSS-Protection: 1; mode=block
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+Content-Security-Policy: default-src 'self';
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: geolocation=(), microphone=(), camera=()
+```
+
+## 🛡️ OAuth Security
+
+### State Parameter Validation
+- **Random state generation** for each OAuth flow
+- **State validation** on callback
+- **State expiration** (default: 10 minutes)
+- **One-time use** state tokens
+
+### Secure Token Handling
+- **No token storage** in client-side storage
+- **Short-lived access tokens**
+- **Secure refresh token rotation**
+- **Token binding** to client IP/user agent
+
+## 🚦 Rate Limiting
+
+- **Login attempts**: 5 attempts per 15 minutes
+- **API requests**: 1000 requests per hour (per IP)
+- **Password reset**: 3 requests per hour (per account)
+- **OAuth flows**: 10 requests per minute (per IP)
+- **Admin endpoints**: 100 requests per 15 minutes
+- **File uploads**: 20 requests per hour
+- **Authentication endpoints**: 10 requests per minute
+- **IP-based tracking** to prevent abuse
+- **Redis-based rate limiting** for distributed environments
 
 ## Security Middleware Components
 
@@ -253,10 +355,10 @@ router.post('/images/upload',
 
 ```bash
 # Basic security tests
-npm test -- --testPathPatterns=security.test.js
+yarn test -- --testPathPatterns=security.test.js
 
 # Integration tests (requires database)
-npm test -- --testPathPatterns=security-integration.test.js
+yarn test -- --testPathPatterns=security-integration.test.js
 ```
 
 ## Security Best Practices Implemented
@@ -320,7 +422,7 @@ npm test -- --testPathPatterns=security-integration.test.js
 ### Installation
 
 ```bash
-npm install express-rate-limit helmet isomorphic-dompurify validator
+yarn add express-rate-limit helmet isomorphic-dompurify validator
 ```
 
 ## Configuration

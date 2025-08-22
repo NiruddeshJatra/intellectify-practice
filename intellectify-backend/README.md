@@ -1,161 +1,351 @@
 # Intellectify Backend
 
+[![Node.js](https://img.shields.io/badge/Node.js-18.x-green)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/Express-4.x-lightgrey)](https://expressjs.com/)
+[![Prisma](https://img.shields.io/badge/Prisma-5.x-2D3748?logo=prisma)](https://www.prisma.io/)
+[![Jest](https://img.shields.io/badge/Jest-29.x-C21325?logo=jest)](https://jestjs.io/)
+
 ## Overview
-This is the backend service for the Intellectify application, built with Node.js, Express, and Prisma. It provides RESTful API endpoints for user authentication, authorization, and core application functionality.
 
-## Features
+Intellectify is a secure content management system with comprehensive authentication and authorization. This backend service is built with Node.js, Express, and Prisma, providing RESTful APIs for content management, user authentication, and admin operations.
 
-### Authentication
-- Google OAuth 2.0 authentication
-- GitHub OAuth authentication
-- JWT-based session management
-- Secure password hashing
+## ✨ Features
 
-### User Management
-- User registration and profile management
-- Session management
-- Role-based access control
+- **Authentication & Authorization**
+  - JWT with access/refresh tokens
+  - Google & GitHub OAuth 2.0 with state validation
+  - Admin-specific email/password authentication
+  - Role-based access control (ADMIN/User)
+  - Rate limiting (100 requests/15min for admin endpoints)
+  - Secure HTTP-only cookies for token storage
 
-## Prerequisites
+- **Content Management**
+  - Rich text content with HTML sanitization
+  - Image uploads (5MB max, JPG/PNG/GIF/WebP)
+  - Content categorization and subcategorization
+  - Draft/Published content states
+  - Priority-based content ordering
 
-- Node.js 16.x or later
-- npm 8.x or later
-- PostgreSQL 13.x or later
+- **Security**
+  - CSRF protection with same-site cookies
+  - XSS prevention through input sanitization
+  - Secure file upload validation
+  - Content ownership validation
+  - Security headers (CSP, HSTS, XSS-Protection)
+  - Request rate limiting
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Node.js 18.x or later
+- npm 9.x or later
+- PostgreSQL 14.x or later
 - Git
 
-## Getting Started
+### Installation
 
-### 1. Clone the repository
 ```bash
-git clone <repository-url>
+# Clone the repository
+git clone https://github.com/intellectify/intellectify-backend.git
 cd intellectify-backend
+
+# Install dependencies
+yarn install
+
+# Set up environment variables
+cp .env.example .env
 ```
 
-### 2. Install dependencies
-```bash
-npm install
-```
+### Database Setup
 
-### 4. Database Setup
 ```bash
 # Run database migrations
 npx prisma migrate dev
 
-# Seed initial data (if applicable)
+# Create an admin user (follow prompts)
+node scripts/createAdmin.js
+
+# Seed initial data (if available)
 npx prisma db seed
+
+# Open Prisma Studio (optional)
+npx prisma studio
 ```
 
-### 5. Start the development server
+### Running the Server
+
 ```bash
 # Development mode with hot-reload
-npm run dev
+yarn dev
 
 # Production mode
-npm start
+yarn start
+
+# Run tests
+yarn test
 ```
 
-## Available Scripts
+## 🛠 Development
 
-- `npm run dev`: Start the development server with hot-reload
-- `npm start`: Start the production server
-- `npm test`: Run tests
-- `npm run lint`: Run ESLint
-- `npm run format`: Format code with Prettier
-- `npx prisma studio`: Open Prisma Studio for database management
+### Available Scripts
 
-## API Documentation
+```bash
+# Run tests
+yarn test
 
-### Content Categories
+# Run tests with coverage
+yarn test:coverage
 
-The following categories are available for content classification. These are defined as an enum in the database and are case-sensitive.
+# Lint code
+yarn lint
 
-| Category Enum | Display Name |
-|--------------|-------------|
-| `GENERAL` | General |
-| `PROGRAMMING_LANGUAGES` | Programming Languages |
-| `DATA_STRUCTURES_ALGORITHMS` | Data Structures & Algorithms |
-| `SYSTEM_DESIGN` | System Design |
-| `TECH_INSIGHTS` | Tech Insights |
-| `DATA_AI` | Data & AI |
-| `WEB_DEVELOPMENT` | Web Development |
+# Format code
+yarn format
 
-### Content Endpoints
+# Check for security vulnerabilities
+yarn audit
+```
 
-#### Get All Categories
-- `GET /api/categories`: Get a list of all available content categories
-  - Response format:
-    ```json
-    {
-      "status": "success",
-      "results": 7,
-      "data": [
-        { "value": "GENERAL", "label": "General" },
-        { "value": "PROGRAMMING_LANGUAGES", "label": "Programming Languages" },
-        // ... other categories
-      ]
-    }
-    ```
+### Environment Variables
 
-#### Content Management
-- `GET /api/content`: Get published content (filterable by category)
-  - Query Parameters:
-    - `category`: Filter by category (optional, case-sensitive, must match enum values exactly)
-    - `limit`: Number of results per page (default: 50)
-    - `offset`: Number of results to skip (for pagination, default: 0)
+Required environment variables (`.env`):
 
-- `POST /api/content`: Create new content (Admin only)
-  - Request body should include:
-    ```json
-    {
-      "title": "Article Title",
-      "content": "<p>Article content in HTML format</p>",
-      "excerpt": "Short excerpt of the article",
-      "category": "TECH_INSIGHTS",
-      "subcategory": "Optional subcategory",
-      "status": "DRAFT"
-    }
-    ```
-  - The `category` field must be one of the valid enum values
+```env
+# Server
+NODE_ENV=development
+PORT=3000
 
-- `PUT /api/content/:id`: Update existing content (Admin only)
-  - Same request body format as create, but all fields are optional
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/intellectify"
 
-### Authentication Endpoints
+# JWT Authentication
+JWT_ACCESS_SECRET=your_access_token_secret
+JWT_REFRESH_SECRET=your_refresh_token_secret
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+
+# OAuth
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_CALLBACK_URL=http://localhost:3000/api/auth/google/callback
+
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+GITHUB_CALLBACK_URL=http://localhost:3000/api/auth/github/callback
+
+# File Uploads
+MAX_FILE_SIZE=5242880  # 5MB in bytes
+ALLOWED_FILE_TYPES=image/jpeg,image/png,image/gif,image/webp
+UPLOAD_PATH=./uploads
+
+# Rate Limiting
+ADMIN_RATE_LIMIT_WINDOW_MS=900000  # 15 minutes
+ADMIN_RATE_LIMIT_MAX=100           # Max requests per window
+UPLOAD_RATE_LIMIT_WINDOW_MS=3600000 # 1 hour
+UPLOAD_RATE_LIMIT_MAX=20           # Max uploads per hour
+```
+
+## 📚 API Documentation
+
+### Authentication
+
+#### Admin Authentication
+
+##### Login
+```http
+POST /api/admin/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "securepassword"
+}
+
+# Response (200 OK)
+{
+  "success": true,
+  "user": {
+    "id": "user-id",
+    "email": "admin@example.com",
+    "name": "Admin User",
+    "avatar": "https://...",
+    "role": "ADMIN"
+  }
+}
+# Sets HTTP-only cookies: access_token, refresh_token
+```
+
+##### Get Current Admin
+```http
+GET /api/admin/auth/me
+Authorization: Bearer <admin_token>
+
+# Response (200 OK)
+{
+  "id": "user-id",
+  "email": "admin@example.com",
+  "name": "Admin User",
+  "avatar": "https://...",
+  "role": "ADMIN"
+}
+```
+
+### OAuth Authentication
 
 #### Google OAuth
-- `GET /api/auth/google/callback`: Google OAuth callback URL
-- `POST /api/auth/google-one-tap`: Handle Google One-Tap sign-in
+```http
+# Start OAuth flow
+GET /api/auth/google
 
-#### GitHub OAuth
-- `GET /api/auth/github/callback`: GitHub OAuth callback URL
+# OAuth callback
+GET /api/auth/google/callback
 
-#### Session Management
-- `GET /api/auth/me`: Get current user session (Protected)
-- `POST /api/auth/logout`: Logout current user (Protected)
+# One-Tap Sign-In
+POST /api/auth/google-one-tap
+Content-Type: application/json
 
-## Environment Variables
-
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| PORT | Server port | No | 3000 |
-| NODE_ENV | Environment (development/production) | Yes | - |
-| DATABASE_URL | PostgreSQL connection URL | Yes | - |
-| GOOGLE_CLIENT_ID | Google OAuth client ID | Yes | - |
-| GOOGLE_CLIENT_SECRET | Google OAuth client secret | Yes | - |
-| GITHUB_CLIENT_ID | GitHub OAuth client ID | Yes | - |
-| GITHUB_CLIENT_SECRET | GitHub OAuth client secret | Yes | - |
-| JWT_SECRET | Secret key for JWT tokens | Yes | - |
-| SESSION_SECRET | Secret key for session encryption | Yes | - |
-
-## Testing
-
-Run the test suite:
-```bash
-npm test
+{
+  "credential": "google-jwt-token"
+}
 ```
 
-## Troubleshooting
+#### GitHub OAuth
+```http
+# Start OAuth flow
+GET /api/auth/github
 
-- **Database connection issues**: Verify `DATABASE_URL` in `.env`
-- **OAuth errors**: Ensure callback URLs are correctly configured in OAuth providers
-- **CORS issues**: Verify `FRONTEND_URL` and `BACKEND_URL` in `.env`
+# OAuth callback
+GET /api/auth/github/callback
+```
+
+### Session Management
+
+#### Get Current User
+```http
+GET /api/auth/me
+Authorization: Bearer <token>
+
+# Response (200 OK)
+{
+  "id": "user-id",
+  "email": "user@example.com",
+  "name": "User Name",
+  "avatar": "https://...",
+  "role": "USER"
+}
+```
+
+#### Logout
+```http
+POST /api/auth/logout
+Authorization: Bearer <token>
+
+# Response (200 OK)
+{
+  "success": true,
+  "message": "Successfully logged out"
+}
+# Clears HTTP-only cookies
+```
+
+### Content Management (Admin)
+
+#### Create Content
+```http
+POST /api/admin/content
+Content-Type: application/json
+Authorization: Bearer <admin_token>
+
+{
+  "title": "New Article",
+  "content": "<p>Article content</p>",
+  "excerpt": "Article excerpt",
+  "category": "WEB_DEVELOPMENT",
+  "status": "DRAFT",
+  "subcategory": "Optional subcategory",
+  "priority": 1,
+  "metaTitle": "SEO Title",
+  "metaDescription": "SEO Description"
+}
+
+# Response (201 Created)
+{
+  "id": "content-id",
+  "title": "New Article",
+  "status": "DRAFT",
+  "createdAt": "2023-01-01T00:00:00.000Z"
+}
+```
+
+#### Update Content
+```http
+PUT /api/admin/content/:id
+Content-Type: application/json
+Authorization: Bearer <admin_token>
+
+{
+  "title": "Updated Title",
+  "status": "PUBLISHED"
+  // Other fields are optional
+}
+```
+
+### Media Management (Admin)
+
+#### Upload Temporary Image
+```http
+POST /api/images/upload-temp
+Content-Type: multipart/form-data
+Authorization: Bearer <admin_token>
+
+# Form data: file=<image_file>
+
+# Response (200 OK)
+{
+  "filename": "unique-filename.jpg",
+  "path": "/uploads/temp/unique-filename.jpg",
+  "url": "http://localhost:3000/uploads/temp/unique-filename.jpg",
+  "size": 12345,
+  "mimetype": "image/jpeg"
+}
+```
+
+## 🔒 Security
+
+Security is a top priority. Key security features include:
+
+- **Authentication**: JWT with access/refresh tokens
+- **Authorization**: Role-based access control (RBAC)
+- **Input Validation**: All user inputs are validated and sanitized
+- **File Uploads**: Strict validation of file types and sizes (max 5MB)
+- **Cookies**: HTTP-only, secure, same-site cookies for token storage
+- **Password Hashing**: bcrypt with minimum 12 rounds of hashing
+- **CSRF Protection**: Implemented via same-site cookies
+- **Rate Limiting**: Protection against brute force attacks
+
+For detailed security practices, see [SECURITY.md](./SECURITY.md).
+
+## 🧪 Testing
+
+The test suite includes:
+
+- Unit tests for services and utilities
+- Integration tests for API endpoints
+- Security tests for authentication and authorization
+- Performance tests for critical paths
+
+Run tests:
+```bash
+yarn test
+yarn test:coverage  # For coverage report
+```
+
+See [TESTING.md](./TESTING.md) for more details.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+

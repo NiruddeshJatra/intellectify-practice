@@ -4,6 +4,7 @@ const prisma = require('../config/database');
 const { google, github } = require('../config/oauth');
 const tokenService = require('./tokenService');
 const { OAuth2Client } = require('google-auth-library');
+const AppError = require('../utils/AppError');
 
 /**
  * Security Consideration: Multiple Active Sessions
@@ -160,7 +161,9 @@ class AuthService {
         avatar: picture,
       });
     } catch (error) {
-      throw new Error(`Google OAuth failed: ${error.message}`);
+      // Log the full error for debugging but don't expose internal details to client
+      console.error('Google OAuth error:', error);
+      throw new AppError('Google authentication failed', 401, 'GOOGLE_AUTH_FAILED');
     }
   }
 
@@ -202,7 +205,7 @@ class AuthService {
       }
 
       if (!userEmail) {
-        throw new Error('Unable to retrieve email from GitHub');
+        throw new AppError('Unable to retrieve email from GitHub', 400, 'GITHUB_EMAIL_REQUIRED');
       }
 
       // Create or update user in database
@@ -214,7 +217,9 @@ class AuthService {
         avatar: avatar_url,
       });
     } catch (error) {
-      throw new Error(`GitHub OAuth failed: ${error.message}`);
+      // Log the full error for debugging but don't expose internal details to client
+      console.error('GitHub OAuth error:', error);
+      throw new AppError('GitHub authentication failed', 401, 'GITHUB_AUTH_FAILED');
     }
   }
 

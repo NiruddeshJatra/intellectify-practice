@@ -31,50 +31,117 @@
  * @param {Function} next - Express next middleware function
  */
 
+const AppError = require('../utils/AppError');
+const { nodeEnv } = require('../config/oauth');
+
 const errorHandler = (err, req, res, next) => {
-  const { nodeEnv } =  require('../config/oauth');
   const timestamp = new Date().toISOString();
+  let error = { ...err };
+  error.message = err.message;
+
+  // Handle specific error types
+  if (err.name === 'ValidationError') {
+    const message = Object.values(err.errors).map(val => val.message);
+    error = new AppError(message, 400, 'VALIDATION_ERROR');
+  }
+
+  // Handle Prisma validation errors
+  if (err.name === 'PrismaClientValidationError') {
+    // In production, show a generic error message
+    if (nodeEnv === 'production') {
+      error = new AppError('Invalid data provided', 400, 'VALIDATION_ERROR');
+    } else {
+      // In development, include the full error details
+      error = new AppError(
+        err.message.split('\n').slice(0, 5).join('\n'), // Show first 5 lines of error
+        400,
+        'VALIDATION_ERROR'
+      );
+    }
+  }
+
+  // Handle Prisma constraint violations (unique constraints, foreign key violations, etc.)
+  if (err.name === 'PrismaClientKnownRequestError') {
+    if (err.code === 'P2002') {
+      // Unique constraint violation
+      error = new AppError('A record with this value already exists', 409, 'DUPLICATE_ENTRY');
+    } else if (err.code === 'P2025') {
+      // Record not found
+      error = new AppError('Record not found', 404, 'NOT_FOUND');
+    } else {
+      // Other known Prisma errors
+      error = new AppError('Database operation failed', 500, 'DATABASE_ERROR');
+    }
+  }
+
+  if (err.code === 11000) {
+    const value = err.errmsg.match(/(["'])(?:(?=(\\?))\2.)*?\1/)[0];
+    const message = `Duplicate field value: ${value}. Please use another value!`;
+    error = new AppError(message, 400, 'DUPLICATE_FIELD');
+  }
+
+  if (err.name === 'JsonWebTokenError') {
+    error = new AppError('Invalid token. Please log in again!', 401, 'INVALID_TOKEN');
+  }
+
+  if (err.name === 'TokenExpiredError') {
+    error = new AppError('Your token has expired! Please log in again.', 401, 'TOKEN_EXPIRED');
+  }
+
+  // Sanitize error message to prevent path-to-regexp errors
+  const safeMessage = error.message ? String(error.message).replace(/^https?:\/\//, '//') : 'Unknown error';
   
-  // Prepare error details for logging
+  // Log error details
   const errorDetails = {
     timestamp,
     level: 'ERROR',
-    message: err.message,       // Error message (e.g., "User not found")
-    name: err.name,            // Error type (e.g., "ValidationError")
-    statusCode: err.statusCode || 500,  // HTTP status code
-    path: req.originalUrl,     // Requested URL
-    method: req.method,        // HTTP method (GET, POST, etc.)
-    
-    // Only include stack trace and sensitive data in development
+    message: safeMessage,
+    name: error.name || 'Error',
+    code: error.code || 'UNKNOWN_ERROR',
+    statusCode: error.statusCode || 500,
+    path: req.originalUrl,
+    method: req.method,
     ...(nodeEnv === 'development' && {
-      stack: err.stack,        // Full error stack trace
-      code: err.code,          // Error code (if any)
-      headers: req.headers,    // Request headers
-      body: req.body,          // Request body
-      query: req.query,        // Query parameters
-      params: req.params       // Route parameters
+      stack: error.stack,
+      error: {
+        ...error,
+        message: safeMessage,
+        // Remove any URL-like strings from the error object to prevent further issues
+        ...(error.message && { originalMessage: error.message })
+      }
     })
   };
 
-  // Log the error with all details
-  console.error(JSON.stringify(errorDetails, null, 2));
+  // Log to console in development, to file in production
+  if (nodeEnv === 'development') {
+    console.error('\x1b[31m', 'ERROR 💥', errorDetails);
+  } else {
+    console.error(JSON.stringify(errorDetails));
+  }
 
-  // Prepare the response to the client
-  const statusCode = err.statusCode || 500;
-  // Structure the error response to the client
-  const errorResponse = {
+  // Send response to client
+  const statusCode = error.statusCode || 500;
+  const response = {
     success: false,
-    error: err.message || 'Internal Server Error',
-    
-    // Only include stack trace and error code in development
-    ...(nodeEnv === 'development' && {
-      stack: err.stack,                    // Full stack trace
-      ...(err.code && { code: err.code })  // Include error code if it exists
-    })
+    error: statusCode >= 500 ? 'Internal Server Error' : (error.message || 'Something went wrong'),
+    code: error.code || 'INTERNAL_ERROR',
+    timestamp: new Date().toISOString()
   };
-
-  // Send the error response with appropriate status code
-  res.status(statusCode).json(errorResponse);
+  
+  // Only include additional details for client errors (4xx)
+  if (statusCode < 500 && error.message) {
+    response.error = error.message;
+  }
+  
+  // Add debug info in development
+  if (nodeEnv === 'development') {
+    response.stack = error.stack;
+    if (error.details) {
+      response.details = error.details;
+    }
+  }
+  
+  res.status(statusCode).json(response);
 };
 
 /**
@@ -85,7 +152,7 @@ const errorHandler = (err, req, res, next) => {
  * 
  * @param {Object} server - Optional HTTP server instance for graceful shutdown
  */
-const handleRejections = (server) => {
+const handleRejections = () => {
   process.on('unhandledRejection', (reason, promise) => {
     console.error(JSON.stringify({
       timestamp: new Date().toISOString(),

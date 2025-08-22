@@ -19,6 +19,21 @@ enum OAuthProvider {
   GITHUB
 }
 
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum Category {
+  GENERAL
+  PROGRAMMING_LANGUAGES
+  DATA_STRUCTURES_ALGORITHMS
+  SYSTEM_DESIGN
+  TECH_INSIGHTS
+  DATA_AI
+  WEB_DEVELOPMENT
+}
+
 // Why a separate RefreshToken model?
 //
 // 1. Security & Token Management:
@@ -61,16 +76,20 @@ model RefreshToken {
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
-  name      String   // Full name from OAuth
+  name      String   // Full name from OAuth or admin input
   avatar    String?  // Profile picture URL from OAuth
   role      Role     @default(REGULAR)
 
-  // OAuth info (stored directly in user for simplicity)
-  provider          OAuthProvider
-  
-  // Refresh tokens relation
+  // OAuth info (nullable for admin users)
+  provider          OAuthProvider?
+  providerAccountId String? // OAuth provider's user ID (google ID or github ID)
+
+  // Admin authentication (nullable for OAuth users)
+  password          String?  // Hashed password for admin users
+
+  // Relations
   refreshTokens     RefreshToken[]
-  providerAccountId String // OAuth provider's user ID (google ID or github ID)
+  content          Content[]
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -78,4 +97,33 @@ model User {
 
   @@unique([provider, providerAccountId]) // Prevent duplicate OAuth accounts
   @@map("users")
+}
+
+model Content {
+  id          String      @id @default(uuid())
+  title       String
+  content     String      // Rich text content from CKEditor
+  excerpt     String?     // Optional short description
+  category    Category?   // Category of the content
+  subcategory String?     // Optional subcategory (e.g., "javascript", "python")
+  status      ContentStatus @default(DRAFT)
+  priority    Int         @default(0)  // Custom ordering priority
+
+  // Metadata
+  authorId    String
+  author      User        @relation(fields: [authorId], references: [id])
+
+  // SEO and display
+  slug        String      @unique  // URL-friendly version of title
+  metaTitle   String?
+  metaDescription String?
+
+  // Timestamps
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  publishedAt DateTime?   // When content was first published
+
+  @@index([status, priority, createdAt])
+  @@index([authorId])
+  @@map("content")
 }

@@ -65,6 +65,61 @@ npm start
 
 ## API Documentation
 
+### Content Categories
+
+The following categories are available for content classification. These are defined as an enum in the database and are case-sensitive.
+
+| Category Enum | Display Name |
+|--------------|-------------|
+| `GENERAL` | General |
+| `PROGRAMMING_LANGUAGES` | Programming Languages |
+| `DATA_STRUCTURES_ALGORITHMS` | Data Structures & Algorithms |
+| `SYSTEM_DESIGN` | System Design |
+| `TECH_INSIGHTS` | Tech Insights |
+| `DATA_AI` | Data & AI |
+| `WEB_DEVELOPMENT` | Web Development |
+
+### Content Endpoints
+
+#### Get All Categories
+- `GET /api/categories`: Get a list of all available content categories
+  - Response format:
+    ```json
+    {
+      "status": "success",
+      "results": 7,
+      "data": [
+        { "value": "GENERAL", "label": "General" },
+        { "value": "PROGRAMMING_LANGUAGES", "label": "Programming Languages" },
+        // ... other categories
+      ]
+    }
+    ```
+
+#### Content Management
+- `GET /api/content`: Get published content (filterable by category)
+  - Query Parameters:
+    - `category`: Filter by category (optional, case-sensitive, must match enum values exactly)
+    - `limit`: Number of results per page (default: 50)
+    - `offset`: Number of results to skip (for pagination, default: 0)
+
+- `POST /api/content`: Create new content (Admin only)
+  - Request body should include:
+    ```json
+    {
+      "title": "Article Title",
+      "content": "<p>Article content in HTML format</p>",
+      "excerpt": "Short excerpt of the article",
+      "category": "TECH_INSIGHTS",
+      "subcategory": "Optional subcategory",
+      "status": "DRAFT"
+    }
+    ```
+  - The `category` field must be one of the valid enum values
+
+- `PUT /api/content/:id`: Update existing content (Admin only)
+  - Same request body format as create, but all fields are optional
+
 ### Authentication Endpoints
 
 #### Google OAuth

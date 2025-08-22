@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
 const { jwtAccessSecret } = require('../config/oauth');
+const AppError = require('../utils/AppError');
 
 // Middleware to check if user is authenticated
 const authenticateUser = async (req, res, next) => {
@@ -9,15 +10,24 @@ const authenticateUser = async (req, res, next) => {
     const token = req.cookies.access_token;
     
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        error: 'No token provided',
-        code: 'MISSING_TOKEN'
-      });
+      return next(new AppError('No token provided', 401, 'MISSING_TOKEN'));
     }
 
     // Verify JWT token
-    const decoded = jwt.verify(token, jwtAccessSecret);
+    let decoded;
+    try {
+      decoded = jwt.verify(token, jwtAccessSecret);
+    } catch (error) {
+      if (error.name === 'TokenExpiredError') {
+        return next(new AppError('Token has expired', 401, 'TOKEN_EXPIRED'));
+      }
+      return next(new AppError('Invalid token', 401, 'INVALID_TOKEN'));
+    }
+    
+    // Validate token payload
+    if (!decoded?.userId) {
+      return next(new AppError('Invalid token payload', 401, 'INVALID_TOKEN_PAYLOAD'));
+    }
     
     // Get user from database (make sure user still exists)
     const user = await prisma.user.findUnique({
@@ -27,64 +37,48 @@ const authenticateUser = async (req, res, next) => {
         email: true,
         name: true,
         avatar: true,
-        role: true
+        role: true,
+        createdAt: true,
+        updatedAt: true
       }
     });
 
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        error: 'User not found',
-        code: 'USER_NOT_FOUND'
-      });
+      return next(new AppError('User not found', 401, 'USER_NOT_FOUND'));
     }
 
-    // Add user to request object for use in route handlers
+    // Add user to request object
     req.user = user;
-    
-    // Continue to next middleware/route handler
     next();
-    
   } catch (error) {
-    console.error('Auth middleware error:', error);
-    
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid token',
-        code: 'INVALID_TOKEN'
-      });
-    }
-    
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        error: 'Token expired',
-        code: 'TOKEN_EXPIRED'
-      });
-    }
-    
-    return res.status(500).json({
-      success: false,
-      error: 'Authentication failed',
-      code: 'AUTH_FAILED'
-    });
+    console.error('Authentication error:', error);
+    return next(new AppError('Authentication failed', 401, 'AUTH_ERROR'));
   }
 };
 
-// Middleware to check if user has admin role
-const requireAdmin = (req, res, next) => {
-  if (req.user && req.user.role === 'ADMIN') {
-    return next();
+// Middleware specifically for admin authentication
+// This combines user authentication with admin role checking
+const authenticateAdmin = async (req, res, next) => {
+  try {
+    // First authenticate the user
+    await authenticateUser(req, res, (err) => {
+      if (err) return next(err);
+      
+      // Then check if user is admin
+      if (req.user.role !== 'ADMIN') {
+        console.warn(`Non-admin user ${req.user.id} attempted to access admin endpoint: ${req.method} ${req.originalUrl}`);
+        return next(new AppError('Admin access required', 403, 'ADMIN_ACCESS_REQUIRED'));
+      }
+      
+      next();
+    });
+  } catch (error) {
+    console.error('Admin authentication error:', error);
+    return next(new AppError('Admin authentication failed', 401, 'ADMIN_AUTH_ERROR'));
   }
-  return res.status(403).json({
-    success: false,
-    error: 'Admin access required',
-    code: 'ADMIN_ACCESS_REQUIRED'
-  });
 };
 
 module.exports = {
   authenticateUser,
-  requireAdmin
+  authenticateAdmin
 };

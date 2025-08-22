@@ -194,6 +194,7 @@ router.get('/me', authenticateUser, authController.getMe);
  * - HTTP-only cookies: Prevents XSS token theft
  */
 router.post('/refresh-token', authController.refreshToken);
+
 /**
  * @route POST /api/auth/logout
  * @description Logout current user and revoke refresh tokens (Cookie-Based)

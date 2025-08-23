@@ -70,10 +70,15 @@ const requestLogger = (req, res, next) => {
   // Override the send function to capture the response body
   res.send = function (body) {
     if (isDev && body) {
-      try {
-        responseBody = typeof body === 'string' ? JSON.parse(body) : body;
-      } catch (e) {
-        responseBody = body;
+      const contentType = res.getHeader('Content-Type');
+      if (typeof contentType === 'string' && contentType.includes('application/json')) {
+        try {
+          responseBody = typeof body === 'string' ? JSON.parse(body) : body;
+        } catch (e) {
+          responseBody = body; // fallback to raw body if parsing fails
+        }
+      } else {
+        responseBody = body; // log raw string for non-JSON responses
       }
     }
     return originalSend.apply(res, arguments);

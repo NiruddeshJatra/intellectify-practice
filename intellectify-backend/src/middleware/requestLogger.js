@@ -1,6 +1,35 @@
 const { nodeEnv } = require('../config/oauth');
 
 /**
+ * Formats log data into a readable string with each property on a new line
+ * @param {Object} data - The log data to format
+ * @param {string} type - The type of log (request/response)
+ * @returns {string} Formatted log string
+ */
+const formatLog = (data, type = 'REQUEST') => {
+  const timestamp = `[${new Date().toISOString()}]`;
+  const level = data.level || 'INFO';
+  const status = data.status ? ` ${data.status}` : '';
+  const duration = data.duration ? ` (${data.duration})` : '';
+  
+  let logString = `${timestamp} [${level}] ${type} ${data.method} ${data.url}${status}${duration}\n`;
+  
+  // Add additional properties with indentation
+  const exclude = ['timestamp', 'level', 'method', 'url', 'status', 'duration'];
+  
+  Object.entries(data).forEach(([key, value]) => {
+    if (!exclude.includes(key) && value !== undefined) {
+      const formattedValue = typeof value === 'object' 
+        ? JSON.stringify(value, null, 2).split('\n').join('\n    ')
+        : value;
+      logString += `  ${key}: ${formattedValue}\n`;
+    }
+  });
+  
+  return logString;
+};
+
+/**
  * Logs all incoming requests with useful information
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -11,47 +40,68 @@ const requestLogger = (req, res, next) => {
   if (req.path === '/health') return next();
 
   const start = Date.now();
-  const { method, originalUrl, ip, body, query, params } = req;
+  const { method, originalUrl, ip, body, query, params, headers } = req;
+  const isDev = nodeEnv === 'development';
 
   // Log request details
-  const logData = {
+  const requestLog = {
     timestamp: new Date().toISOString(),
     level: 'INFO',
     method,
     url: originalUrl,
     ip,
     ...(query && Object.keys(query).length > 0 && { query }),
-    ...(nodeEnv === 'development' && {
-      ...(req.headers && { headers: req.headers }),
+    ...(isDev && {
+      ...(params && Object.keys(params).length > 0 && { params }),
       ...(body && typeof body === 'object' && Object.keys(body).length > 0 && { body }),
-      ...(params && Object.keys(params).length > 0 && { params })
+      ...(headers && { headers: { 
+        'content-type': headers['content-type'],
+        'user-agent': headers['user-agent'],
+        authorization: headers['authorization'] ? '*****' : undefined,
+        cookie: headers['cookie'] ? '*****' : undefined
+      }})
     })
   };
 
-  // Log the request
-  console.log(JSON.stringify(logData));
+  // Store the original send function
+  const originalSend = res.send;
+  let responseBody;
 
-  // Log response time
+  // Override the send function to capture the response body
+  res.send = function (body) {
+    if (isDev && body) {
+      try {
+        responseBody = typeof body === 'string' ? JSON.parse(body) : body;
+      } catch (e) {
+        responseBody = body;
+      }
+    }
+    return originalSend.apply(res, arguments);
+  };
+
+  // Log the request
+  console.log(formatLog(requestLog, 'REQUEST'));
+
+  // Log response time and details
   res.on('finish', () => {
     const duration = Date.now() - start;
-    const logData = {
+    const responseLog = {
       timestamp: new Date().toISOString(),
-      level: 'INFO',
+      level: res.statusCode >= 400 ? 'ERROR' : 'INFO',
       method,
       url: originalUrl,
       status: res.statusCode,
       duration: `${duration}ms`,
+      ...(isDev && responseBody && { body: responseBody }),
       ...(res.statusCode >= 400 && { 
         error: res.locals.errorMessage || 'Unknown error',
-        ...(res.locals.error && { errorDetails: res.locals.error })
+        ...(res.locals.error && { 
+          errorDetails: res.locals.error.message || res.locals.error 
+        })
       })
     };
     
-    if (res.statusCode >= 400) {
-      console.error(JSON.stringify(logData));
-    } else {
-      console.log(JSON.stringify(logData));
-    }
+    console.log(formatLog(responseLog, 'RESPONSE'));
   });
 
   next();

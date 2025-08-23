@@ -42,9 +42,14 @@ const router = express.Router();
  *   timestamp: string
  * }
  */
-router.get('/', contentController.getPublishedContent);
+// Specific routes must come before parameterized routes
+router.get('/categories', contentController.getContentCategories);
 
+// Parameterized routes
 router.get('/:slug', contentController.getContentBySlug);
+
+// Root route
+router.get('/', contentController.getPublishedContent);
 
 // Security error handler is applied globally in app.js
 

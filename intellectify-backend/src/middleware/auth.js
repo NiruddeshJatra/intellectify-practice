@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
 const { jwtAccessSecret } = require('../config/oauth');
-const AppError = require('../utils/AppError');
+const AppError = require('../utils/appError');
 
 // Middleware to check if user is authenticated
 const authenticateUser = async (req, res, next) => {
@@ -62,7 +62,9 @@ const authenticateAdmin = async (req, res, next) => {
   try {
     // First authenticate the user
     await authenticateUser(req, res, (err) => {
-      if (err) return next(err);
+      if (err) {
+        return next(err);
+      }
       
       // Then check if user is admin
       if (req.user.role !== 'ADMIN') {

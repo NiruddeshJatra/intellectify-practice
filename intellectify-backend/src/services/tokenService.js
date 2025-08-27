@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../config/database');
 const crypto = require('crypto');
 const { jwtAccessSecret, jwtRefreshSecret, nodeEnv } = require('../config/oauth');
-const AppError = require('../utils/AppError');
+const AppError = require('../utils/appError');
 
 const ACCESS_TOKEN_EXPIRY = '15m';  // 15 minutes
 const REFRESH_TOKEN_EXPIRY = '7d';  // 7 days
@@ -83,7 +83,9 @@ const verifyRefreshToken = async (token) => {
       },
     });
 
-    if (!storedToken) return null;
+    if (!storedToken) {
+      return null;
+    }
     return decoded;
   } catch (error) {
     return null;

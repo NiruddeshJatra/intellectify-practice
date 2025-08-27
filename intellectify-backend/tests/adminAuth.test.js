@@ -4,7 +4,7 @@ const adminAuthService = require('../src/services/adminAuthService');
 const mockPrisma = require('../src/config/database');
 const tokenService = require('../src/services/tokenService');
 const bcrypt = require('bcrypt');
-const AppError = require('../src/utils/AppError');
+const AppError = require('../src/utils/appError');
 
 describe('Admin Authentication', () => {
   beforeEach(() => {

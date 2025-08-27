@@ -4,7 +4,7 @@ const app = require('../app');
 const tokenService = require('../src/services/tokenService');
 const prisma = require('../src/config/database');
 const { jwtAccessSecret, jwtRefreshSecret } = require('../src/config/oauth');
-const AppError = require('../src/utils/AppError');
+const AppError = require('../src/utils/appError');
 
 // Mock Prisma client
 jest.mock('../src/config/database');

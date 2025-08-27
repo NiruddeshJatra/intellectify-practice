@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const jwt = require('jsonwebtoken');
 const { jwtAccessSecret } = require('../src/config/oauth');
-const imageService = require('../src/services/imageService');
+const fileStorageService = require('../src/services/fileStorageService');
 
 // Mock Prisma client
 jest.mock('@prisma/client', () => {
@@ -52,8 +52,8 @@ jest.mock('../src/middleware/auth', () => ({
   }
 }));
 
-// Mock image service
-jest.mock('../src/services/imageService', () => {
+// Mock file storage service
+jest.mock('../src/services/fileStorageService', () => {
   return {
     validateFile: jest.fn().mockResolvedValue(true),
     saveImage: jest.fn().mockImplementation((file) => {
@@ -72,7 +72,7 @@ jest.mock('../src/services/imageService', () => {
 });
 
 // Get the mock after it's created
-const mockImageService = require('../src/services/imageService');
+const mockFileStorageService = require('../src/services/fileStorageService');
 
 // Helper to create a test image buffer
 const createTestImage = () => {
@@ -108,23 +108,23 @@ describe('Temporary Image Upload API', () => {
     jest.clearAllMocks();
     
     // Setup default mocks
-    imageService.validateFile.mockResolvedValue(true);
-    imageService.generateUniqueFilename.mockReturnValue('unique-filename.jpg');
-    imageService.saveImage.mockResolvedValue({
+    fileStorageService.validateFile.mockResolvedValue(true);
+    fileStorageService.generateUniqueFilename.mockReturnValue('unique-filename.jpg');
+    fileStorageService.saveImage.mockResolvedValue({
       filename: 'test-image.jpg',
       path: 'uploads/temp/test-image.jpg',
-      url: '/api/images/temp/test-image.jpg',
-      size: 1024,
-      mimetype: 'image/jpeg'
+      url: '/api/images/temp/test-image.jpg'
     });
+    fileStorageService.generateImagePath.mockReturnValue('temp/2024/08');
+    fileStorageService.generateImageUrl.mockImplementation((path) => `http://localhost:3000/${path}`);
   });
 
-  describe('POST /api/images/upload-temp', () => {
+  describe('POST /api/admin/content/images/upload-temp', () => {
     it('should upload an image to temporary storage', async () => {
       const jpegBuffer = createTestImage();
       
       const response = await request(app)
-        .post('/api/images/upload-temp')
+        .post('/api/admin/content/images/upload-temp')
         .set('Cookie', `access_token=${adminToken}`)
         .attach('image', jpegBuffer, 'test-image.jpg');
         
@@ -144,7 +144,7 @@ describe('Temporary Image Upload API', () => {
       const textBuffer = Buffer.from('This is not an image');
       
       const response = await request(app)
-        .post('/api/images/upload-temp')
+        .post('/api/admin/content/images/upload-temp')
         .set('Cookie', `access_token=${adminToken}`)
         .attach('image', textBuffer, 'test.txt');
 
@@ -155,7 +155,7 @@ describe('Temporary Image Upload API', () => {
 
     it('should reject when no file is provided', async () => {
       const response = await request(app)
-        .post('/api/images/upload-temp')
+        .post('/api/admin/content/images/upload-temp')
         .set('Cookie', `access_token=${adminToken}`);
 
       expect(response.status).toBe(400);
@@ -171,12 +171,12 @@ expect(response.body.error).toContain('No file uploaded');
       error.code = 'ENOSPC';
       
       // Mock the saveImage implementation for this test only
-      mockImageService.saveImage.mockImplementationOnce(() => Promise.reject(error));
+      mockFileStorageService.saveImage.mockImplementationOnce(() => Promise.reject(error));
       
       const jpegBuffer = createTestImage();
       
       const response = await request(app)
-        .post('/api/images/upload-temp')
+        .post('/api/admin/content/images/upload-temp')
         .set('Cookie', `access_token=${adminToken}`)
         .attach('image', jpegBuffer, 'test-disk-full.jpg');
 
@@ -192,17 +192,17 @@ expect(response.body.error).toContain('No file uploaded');
       error.code = 'EACCES';
       
       // Mock the initializeDirectories implementation for this test only
-      mockImageService.initializeDirectories.mockImplementationOnce(() => Promise.reject(error));
+      mockFileStorageService.initializeDirectories.mockImplementationOnce(() => Promise.reject(error));
             // Also mock saveImage to ensure it's not called
 
-      mockImageService.saveImage.mockImplementationOnce(() => {
+      mockFileStorageService.saveImage.mockImplementationOnce(() => {
         throw error;
       });
       
       const jpegBuffer = createTestImage();
       
       const response = await request(app)
-        .post('/api/images/upload-temp')
+        .post('/api/admin/content/images/upload-temp')
         .set('Cookie', `access_token=${adminToken}`)
         .attach('image', jpegBuffer, 'test-permission.jpg');
 

@@ -1,5 +1,5 @@
 const adminAuthService = require('../services/adminAuthService');
-const AppError = require('../utils/AppError');
+const AppError = require('../utils/appError');
 
 /**
  * Handles admin login with email/password authentication

@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const imageService = require('../services/imageService');
+const imageService = require('../services/fileStorageService');
 
 class Scheduler {
   static init() {

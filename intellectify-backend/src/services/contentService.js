@@ -3,6 +3,7 @@ const AppError = require('../utils/appError');
 const ValidationHelper = require('../utils/validationHelper');
 const SlugGenerator = require('./slugGenerator');
 const ImageManager = require('./contentImageService');
+const { Category } = require('@prisma/client');
 
 /**
  * Content Service - Main Content Management Service
@@ -112,8 +113,7 @@ class ContentService {
     } = contentData;
 
     // Generate unique slug using SlugGenerator module
-    const baseSlug = SlugGenerator.generateSlug(title);
-    const slug = await SlugGenerator.ensureUniqueSlug(baseSlug);
+    const slug = await SlugGenerator.createUniqueSlug(title);
 
     const newContent = await prisma.content.create({
       data: {
@@ -201,8 +201,7 @@ class ContentService {
     // Generate new slug if title changed using SlugGenerator
     let { slug } = existingContent;
     if (title && title !== existingContent.title) {
-      const baseSlug = SlugGenerator.generateSlug(title);
-      slug = await SlugGenerator.ensureUniqueSlug(baseSlug, contentId);
+      slug = await SlugGenerator.createUniqueSlug(title, contentId);
     }
 
     // Set publishedAt when publishing for the first time
@@ -470,45 +469,12 @@ class ContentService {
   }
 
   /**
-   * Get available content categories using ContentValidator
-   * 
-   * Delegates to ContentValidator to maintain consistency with validation logic.
-   * 
-   * @returns {string[]} - Array of all available category enum values
-   */
-  /**
    * Get all available content categories
    * 
    * @returns {string[]} - Array of all available category enum values
    */
-  async getContentCategories() {
-    try {
-      // Get all unique categories from the database
-      const categories = await prisma.content.findMany({
-        distinct: ['category'],
-        select: {
-          category: true
-        },
-        where: {
-          status: 'PUBLISHED',
-          category: {
-            not: null
-          }
-        },
-        orderBy: {
-          category: 'asc'
-        }
-      });
-      
-      // Extract just the category strings and remove any null/undefined values
-      return categories
-        .map(item => item.category)
-        .filter(Boolean)
-        .sort();
-    } catch (error) {
-      console.error('Error fetching content categories:', error);
-      throw new AppError('Failed to fetch content categories', 500, 'CATEGORIES_FETCH_ERROR');
-    }
+  getContentCategories() {
+    return Object.values(Category);
   }
 }
 

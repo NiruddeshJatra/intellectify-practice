@@ -1,6 +1,4 @@
 const contentService = require('../services/contentService');
-const ResponseHelper = require('../utils/responseHelper');
-const ValidationHelper = require('../utils/validationHelper');
 
 class ContentController {
   /**
@@ -25,7 +23,11 @@ class ContentController {
         status
       });
 
-      return ResponseHelper.created(res, newContent, 'Content created successfully');
+      return res.status(201).json({
+        success: true,
+        data: newContent,
+        message: 'Content created successfully'
+      });
     } catch (error) {
       next(error);
     }
@@ -56,10 +58,14 @@ class ContentController {
       });
 
       if (!updatedContent) {
-        return ResponseHelper.notFound(res, 'Content');
+        throw new AppError('Content not found', 404, 'NOT_FOUND');
       }
 
-      return ResponseHelper.success(res, updatedContent, 'Content updated successfully');
+      return res.status(200).json({
+        success: true,
+        data: updatedContent,
+        message: 'Content updated successfully'
+      });
     } catch (error) {
       next(error);
     }
@@ -75,10 +81,14 @@ class ContentController {
       const deleted = await contentService.deleteContent(contentId);
 
       if (!deleted) {
-        return ResponseHelper.notFound(res, 'Content');
+        throw new AppError('Content not found', 404, 'NOT_FOUND');
       }
 
-      return ResponseHelper.success(res, null, 'Content deleted successfully');
+      return res.status(200).json({
+        success: true,
+        data: null,
+        message: 'Content deleted successfully'
+      });
     } catch (error) {
       next(error);
     }
@@ -95,10 +105,14 @@ class ContentController {
       const content = await contentService.getContentById(contentId); // Include unpublished for admin
 
       if (!content) {
-        return ResponseHelper.notFound(res, 'Content');
+        throw new AppError('Content not found', 404, 'NOT_FOUND');
       }
 
-      return ResponseHelper.success(res, content);
+      return res.status(200).json({
+        success: true,
+        data: content,
+        message: 'Content retrieved successfully'
+      });
     } catch (error) {
       next(error);
     }
@@ -127,13 +141,16 @@ class ContentController {
         category
       });
 
-      return ResponseHelper.paginated(
-        res, 
-        result.items, 
-        result.pagination.currentPage, 
-        result.pagination.totalItems, 
-        result.pagination.itemsPerPage
-      );
+      return res.status(200).json({
+        success: true,
+        data: result.items,
+        pagination: {
+          currentPage: result.pagination.currentPage,
+          totalItems: result.pagination.totalItems,
+          itemsPerPage: result.pagination.itemsPerPage
+        },
+        message: 'Content retrieved successfully'
+      });
     } catch (error) {
       next(error);
     }
@@ -150,16 +167,20 @@ class ContentController {
 
       // Validate status
       if (!status || !['DRAFT', 'PUBLISHED'].includes(status)) {
-        return ResponseHelper.validationError(res, 'Invalid status. Must be DRAFT or PUBLISHED');
+        throw new AppError('Invalid status. Must be DRAFT or PUBLISHED', 400, 'VALIDATION_ERROR');
       }
 
       const updatedContent = await contentService.updateContentStatus(contentId, status);
 
       if (!updatedContent) {
-        return ResponseHelper.notFound(res, 'Content');
+        throw new AppError('Content not found', 404, 'NOT_FOUND');
       }
 
-      return ResponseHelper.success(res, updatedContent, 'Content status updated successfully');
+      return res.status(200).json({
+        success: true,
+        data: updatedContent,
+        message: 'Content status updated successfully'
+      });
     } catch (error) {
       next(error);
     }
@@ -182,13 +203,16 @@ class ContentController {
         limit: limitNum
       });
 
-      return ResponseHelper.paginated(
-        res, 
-        items, 
-        pagination.currentPage, 
-        pagination.totalItems, 
-        pagination.itemsPerPage
-      );
+      return res.status(200).json({
+        success: true,
+        data: items,
+        pagination: {
+          currentPage: pagination.currentPage,
+          totalItems: pagination.totalItems,
+          itemsPerPage: pagination.itemsPerPage
+        },
+        message: 'Content retrieved successfully'
+      });
     } catch (error) {
       next(error);
     }
@@ -202,20 +226,20 @@ class ContentController {
       const { slug } = req.params;
       
       if (!slug) {
-        return ResponseHelper.validationError(res, 'Slug is required');
-      }
-
-      if (!ValidationHelper.isValidSlug(slug)) {
-        return ResponseHelper.validationError(res, 'Invalid slug format');
+        throw new AppError('Slug is required', 400, 'VALIDATION_ERROR');
       }
 
       const content = await contentService.getContentBySlug(slug);
 
       if (!content) {
-        return ResponseHelper.notFound(res, 'Content');
+        throw new AppError('Content not found', 404, 'NOT_FOUND');
       }
 
-      return ResponseHelper.success(res, content);
+      return res.status(200).json({
+        success: true,
+        data: content,
+        message: 'Content retrieved successfully'
+      });
     } catch (error) {
       next(error);
     }
@@ -227,7 +251,11 @@ class ContentController {
   async getContentCategories(req, res, next) {
     try {
       const categories = await contentService.getContentCategories();
-      return ResponseHelper.success(res, categories);
+      return res.status(200).json({
+        success: true,
+        data: categories,
+        message: 'Content categories retrieved successfully'
+      });
     } catch (error) {
       next(error);
     }

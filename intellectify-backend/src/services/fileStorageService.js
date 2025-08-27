@@ -3,7 +3,6 @@ const path = require('path');
 const crypto = require('crypto');
 const { JSDOM } = require('jsdom');
 const AppError = require('../utils/appError');
-const ValidationHelper = require('../utils/validationHelper');
 
 class FileStorageService {
   constructor() {
@@ -38,7 +37,6 @@ class FileStorageService {
   }
 
   /**
-   * Validate uploaded file using ValidationHelper
    * @param {Object} file - The uploaded file object
    * @returns {boolean} - True if file is valid, throws error otherwise
    */
@@ -47,22 +45,12 @@ class FileStorageService {
       throw new AppError('No file provided', 400, 'NO_FILE');
     }
 
-    // Use ValidationHelper for file type validation
-    if (!ValidationHelper.isValidImageType(file.mimetype)) {
-      throw new AppError(
-        'Invalid file type. Only images are allowed',
-        400,
-        'INVALID_FILE_TYPE'
-      );
+    if (!this.allowedMimeTypes.includes(file.mimetype)) {
+      throw new AppError('Invalid file type. Only images are allowed', 400, 'INVALID_FILE_TYPE');
     }
 
-    // Use ValidationHelper for file size validation
-    const sizeValidation = ValidationHelper.validateFileSize(
-      file.size,
-      this.maxFileSize
-    );
-    if (!sizeValidation.isValid) {
-      throw new AppError(sizeValidation.error, 400, 'FILE_TOO_LARGE');
+    if (file.size > this.maxFileSize) {
+      throw new AppError('File size exceeds the maximum allowed size of 5MB', 400, 'FILE_TOO_LARGE');
     }
 
     return true;

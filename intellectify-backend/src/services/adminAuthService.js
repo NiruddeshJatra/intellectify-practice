@@ -2,7 +2,6 @@ const bcrypt = require('bcrypt');
 const prisma = require('../config/database');
 const tokenService = require('./tokenService');
 const AppError = require('../utils/appError');
-const ValidationHelper = require('../utils/validationHelper');
 
 /**
  * AdminAuthService handles email/password authentication for admin users
@@ -19,11 +18,6 @@ class AdminAuthService {
   async validateAdminCredentials(email, password) {
     if (!email || !password) {
       throw new AppError('Email and password are required', 400, 'CREDENTIALS_REQUIRED');
-    }
-
-    // Validate email format using ValidationHelper (treat as invalid credentials for security)
-    if (!ValidationHelper.isValidEmail(email)) {
-      throw new AppError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
     }
 
     // Find admin user by email
@@ -79,17 +73,6 @@ class AdminAuthService {
   async createAdmin(email, password, name) {
     if (!email || !password || !name) {
       throw new AppError('Email, password, and name are required', 400, 'MISSING_REQUIRED_FIELDS');
-    }
-
-    // Validate email format using ValidationHelper
-    if (!ValidationHelper.isValidEmail(email)) {
-      throw new AppError('Invalid email format', 400, 'INVALID_EMAIL_FORMAT');
-    }
-
-    // Validate name using ValidationHelper
-    const nameValidation = ValidationHelper.validateStringLength(name, 1, 100);
-    if (!nameValidation.isValid) {
-      throw new AppError(nameValidation.error, 400, 'INVALID_NAME');
     }
 
     // Check if user already exists

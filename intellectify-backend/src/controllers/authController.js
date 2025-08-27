@@ -66,11 +66,7 @@ const googleAuth = async (req, res, next) => {
     // Validate OAuth state parameter for CSRF protection
     const stateValidation = oauthStateService.validateState(state, req.get('user-agent'));
     if (!stateValidation.valid) {
-      throw new AppError(
-        `Invalid OAuth state: ${stateValidation.error}`, 
-        400, 
-        'INVALID_OAUTH_STATE'
-      );
+      return res.redirect(`${frontendUrl}/auth/google/callback?error=${encodeURIComponent('Invalid OAuth state: ' + stateValidation.error)}`);
     }
 
     const user = await authService.handleGoogleAuth(code);
@@ -102,11 +98,7 @@ const githubAuth = async (req, res, next) => {
     // Validate OAuth state parameter for CSRF protection
     const stateValidation = oauthStateService.validateState(state, req.get('user-agent'));
     if (!stateValidation.valid) {
-      throw new AppError(
-        `Invalid OAuth state: ${stateValidation.error}`,
-        400,
-        'INVALID_OAUTH_STATE'
-      );
+      return res.redirect(`${frontendUrl}/auth/github/callback?error=${encodeURIComponent('Invalid OAuth state: ' + stateValidation.error)}`);
     }
 
     const user = await authService.handleGithubAuth(code);
@@ -115,7 +107,11 @@ const githubAuth = async (req, res, next) => {
     // Redirect to frontend callback page that will handle the success
     return res.redirect(`${frontendUrl}/auth/github/callback?success=true`);
   } catch (error) {
-    next(error);
+    const errorMessage = error.message || 'Authentication failed';
+    const errorCode = error.code || 'AUTH_ERROR';
+    return res.redirect(
+      `${frontendUrl}/auth/github/callback?error=${encodeURIComponent(errorMessage)}&code=${errorCode}`
+    );
   }
 };
 
@@ -130,7 +126,7 @@ const getMe = (req, res) => {
   
   const { password, provider, providerAccountId, ...safeUser } = req.user;
   res.status(200).json({
-    status: 'success',
+    status: 'true',
     data: safeUser
   });
 };
@@ -165,7 +161,7 @@ const refreshToken = async (req, res, next) => {
     );
 
     res.status(200).json({
-      status: 'success',
+      status: 'true',
       data: {
         accessToken: tokens.accessToken
       }
@@ -192,8 +188,7 @@ const logout = async (req, res, next) => {
         // Revoke the specific refresh token
         await tokenService.revokeSpecificToken(refreshToken, userId);
       } catch (error) {
-        // Log error but don't fail logout - still clear cookies
-        console.error('Error revoking specific refresh token:', error);
+        next(error);
       }
     }
 
@@ -201,7 +196,7 @@ const logout = async (req, res, next) => {
     tokenService.clearTokenCookies(res);
 
     res.status(200).json({
-      status: 'success',
+      status: 'true',
       message: 'Logged out successfully'
     });
   } catch (error) {

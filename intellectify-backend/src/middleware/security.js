@@ -3,7 +3,6 @@ const DOMPurify = require('isomorphic-dompurify');
 const validator = require('validator');
 const prisma = require('../config/database');
 const AppError = require('../utils/appError');
-const ValidationHelper = require('../utils/validationHelper');
 
 /**
  * Content ownership validation middleware
@@ -147,22 +146,20 @@ exports.fileValidationConfig = {
 };
 
 /**
- * Validates the uploaded file's MIME type and extension using ValidationHelper
+ * Validates the uploaded file's MIME type and extension
  * @param {Object} file - Multer file object
  * @returns {Object} - { isValid: boolean, error: string }
  */
 const validateFileType = (file) => {
-  // Use ValidationHelper for basic MIME type validation
-  if (!ValidationHelper.isValidImageType(file.mimetype)) {
-    const { allowedMimeTypes } = exports.fileValidationConfig;
+  const { allowedMimeTypes, mimeTypeExtensions } = exports.fileValidationConfig;
+  
+  if (!allowedMimeTypes.includes(file.mimetype)) {
     return { 
       isValid: false, 
       error: `Invalid file type. Allowed types: ${allowedMimeTypes.join(', ')}` 
     };
   }
 
-  // Additional extension validation for security
-  const { mimeTypeExtensions } = exports.fileValidationConfig;
   const fileExt = file.originalname.split('.').pop().toLowerCase();
   const validExtensions = mimeTypeExtensions[file.mimetype] || [];
   
@@ -190,17 +187,14 @@ const validateFileUpload = (req, res, next) => {
 
     const { maxFileSize } = exports.fileValidationConfig;
     
-    // Check file size using ValidationHelper
-    const sizeValidation = ValidationHelper.validateFileSize(req.file.size, maxFileSize);
-    if (!sizeValidation.isValid) {
+    if (req.file.size > maxFileSize) {
       return next(new AppError(
-        sizeValidation.error,
+        `File size too large. Maximum size is ${maxFileSize / (1024 * 1024)}MB.`,
         400,
         'FILE_TOO_LARGE'
       ));
     }
 
-    // Validate file type and extension
     const typeValidation = validateFileType(req.file);
     if (!typeValidation.isValid) {
       return next(new AppError(

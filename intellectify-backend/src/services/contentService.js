@@ -1,6 +1,5 @@
 const prisma = require('../config/database');
 const AppError = require('../utils/appError');
-const ValidationHelper = require('../utils/validationHelper');
 const SlugGenerator = require('./slugGenerator');
 const ImageManager = require('./contentImageService');
 const { Category } = require('@prisma/client');
@@ -24,65 +23,45 @@ class ContentService {
    * @returns {Object} - Validated and processed content data
    * @throws {AppError} - If validation fails
    */
-  validateContent(data, isUpdate = false) {
-    const { title, content, category, priority, status, tags } = data;
+  async validateContent(data, isUpdate = false) {
+    if (!isUpdate && (!data || Object.keys(data).length === 0)) {
+      throw new AppError('Request body is empty. Please provide content data.', 400, 'VALIDATION_ERROR');
+    }
 
-    // Required field validation for creation
+    const { title, content, status, priority, category } = data;
+
     if (!isUpdate && (!title || !content)) {
       throw new AppError('Title and content are required', 400, 'VALIDATION_ERROR');
+}
+
+    if (title && title.length > 200) {
+      throw new AppError('Title must be 200 characters or less', 400, 'VALIDATION_ERROR');
     }
 
-    // Field length validations using ValidationHelper
-    if (title) {
-      const titleValidation = ValidationHelper.validateContentTitle(title);
-      if (!titleValidation.isValid) {
-        throw new AppError(titleValidation.error, 400, 'VALIDATION_ERROR');
+    if (content && content.length > 100000) {
+      throw new AppError('Content must be 100,000 characters or less', 400, 'VALIDATION_ERROR');
+    }
+
+    if (priority !== undefined && (isNaN(priority) || priority < 0)) {
+      throw new AppError('Priority must be a non-negative number', 400, 'VALIDATION_ERROR');
+    }
+
+    if (status && !['DRAFT', 'PUBLISHED'].includes(status)) {
+      throw new AppError('Invalid status. Must be either DRAFT or PUBLISHED', 400, 'VALIDATION_ERROR');
+    }
+    if (category) {
+      const validCategories = await this.getContentCategories();
+      if (!validCategories.includes(category)) {
+        throw new AppError('Invalid category', 400, 'INVALID_CATEGORY');
       }
     }
 
-    if (content) {
-      const contentValidation = ValidationHelper.validateContentBody(content, 100000);
-      if (!contentValidation.isValid) {
-        throw new AppError(contentValidation.error, 400, 'VALIDATION_ERROR');
-      }
+    const validatedData = { ...data };
+    if (!validatedData.status && !isUpdate) {
+      validatedData.status = 'DRAFT';
     }
 
-    // Priority validation using ValidationHelper
-    if (priority !== undefined) {
-      const priorityValidation = ValidationHelper.validateNumberRange(priority, 0, Infinity);
-      if (!priorityValidation.isValid) {
-        throw new AppError('Priority must be a non-negative number', 400, 'VALIDATION_ERROR');
-      }
-    }
-
-    // Status validation
-    if (status && !['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(status)) {
-      throw new AppError('Invalid status. Must be DRAFT, PUBLISHED, or ARCHIVED', 400, 'VALIDATION_ERROR');
-    }
-
-    // Tags validation
-    if (tags && Array.isArray(tags)) {
-      if (tags.length > 10) {
-        throw new AppError('Maximum 10 tags allowed', 400, 'VALIDATION_ERROR');
-      }
-      tags.forEach(tag => {
-        if (typeof tag !== 'string' || tag.trim().length === 0) {
-          throw new AppError('All tags must be non-empty strings', 400, 'VALIDATION_ERROR');
-        }
-        if (tag.length > 50) {
-          throw new AppError('Each tag must be 50 characters or less', 400, 'VALIDATION_ERROR');
-        }
-      });
-    }
-
-    return {
-      title: title?.trim(),
-      content: content?.trim(),
-      category: category?.trim(),
-      priority: priority || 0,
-      status: status || 'DRAFT',
-      tags: tags || []
-    };
+    return validatedData;
   }
 
   /**
@@ -198,10 +177,12 @@ class ContentService {
       await ImageManager.cleanupUnusedImages(existingContent.content, content, contentId);
     }
 
-    // Generate new slug if title changed using SlugGenerator
-    let { slug } = existingContent;
-    if (title && title !== existingContent.title) {
-      slug = await SlugGenerator.createUniqueSlug(title, contentId);
+    // If title changed, generate new slug
+    if (title && existingContent.title !== title) {
+      contentData.slug = await SlugGenerator.createUniqueSlug(title, contentId);
+    } else if (!contentData.slug) {
+      // Ensure slug is always set, even if not explicitly provided
+      contentData.slug = existingContent.slug;
     }
 
     // Set publishedAt when publishing for the first time
@@ -223,7 +204,7 @@ class ContentService {
         ...(status && { status }),
         ...(metaTitle !== undefined && { metaTitle }),
         ...(metaDescription !== undefined && { metaDescription }),
-        slug,
+        slug: contentData.slug || existingContent.slug,
         ...(publishedAt && { publishedAt })
       },
       include: {

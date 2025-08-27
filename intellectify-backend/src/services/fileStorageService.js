@@ -5,7 +5,7 @@ const { JSDOM } = require('jsdom');
 const AppError = require('../utils/appError');
 const ValidationHelper = require('../utils/validationHelper');
 
-class ImageService {
+class FileStorageService {
   constructor() {
     this.baseUploadPath = path.join(process.cwd(), 'uploads', 'content'); // Base directory for permanent images
     this.tempUploadPath = path.join(process.cwd(), 'uploads', 'temp'); // Temporary directory for uploaded images
@@ -219,7 +219,7 @@ class ImageService {
 
       // Generate appropriate paths
       const relativePath = isTemp
-        ? this.generateImagePath('temp')
+        ? this.generateImagePath('')
         : this.generateImagePath(category, contentId);
 
       const basePath = isTemp ? this.tempUploadPath : this.baseUploadPath;
@@ -555,4 +555,4 @@ class ImageService {
   }
 }
 
-module.exports = new ImageService();
+module.exports = new FileStorageService();

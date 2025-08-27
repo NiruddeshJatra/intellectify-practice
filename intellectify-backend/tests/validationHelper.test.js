@@ -1,4 +1,4 @@
-const ValidationHelper = require('../src/utils/ValidationHelper');
+const ValidationHelper = require('../src/utils/validationHelper');
 
 describe('ValidationHelper', () => {
   describe('isValidEmail', () => {

@@ -33,7 +33,7 @@ const AppError = require('../utils/appError');
  * @param {Function} next - Express next middleware function
  */
 
-const nodeEnv = process.env.NODE_ENV || 'development';
+const { nodeEnv } = require('../config/oauth');
 
 const errorHandler = (err, req, res, next) => {
   const timestamp = new Date().toISOString();
@@ -48,8 +48,24 @@ const errorHandler = (err, req, res, next) => {
 
   // Handle Prisma validation errors
   if (err.name === 'PrismaClientValidationError') {
-    // In production, show a generic error message
-    if (nodeEnv === 'production') {
+    // Check for enum validation errors
+    if (err.message.includes('Expected ')) {
+      const enumMatch = err.message.match(/Expected (\w+),? but/);
+      const valueMatch = err.message.match(/got "([^"]+)"/);
+      
+      if (enumMatch && valueMatch) {
+        const enumName = enumMatch[1];
+        const invalidValue = valueMatch[1];
+        error = new AppError(
+          `Invalid value '${invalidValue}' for ${enumName}. Please provide a valid value.`,
+          400,
+          'INVALID_ENUM_VALUE'
+        );
+      } else {
+        error = new AppError('Invalid data provided', 400, 'VALIDATION_ERROR');
+      }
+    } else if (nodeEnv === 'production') {
+      // In production, show a generic error message
       error = new AppError('Invalid data provided', 400, 'VALIDATION_ERROR');
     } else {
       // In development, include the full error details
@@ -92,24 +108,36 @@ const errorHandler = (err, req, res, next) => {
   // Sanitize error message to prevent path-to-regexp errors
   const safeMessage = error.message ? String(error.message).replace(/^https?:\/\//, '//') : 'Unknown error';
   
-  // Log error details
+  // Prepare error response for client
+  const statusCode = error.statusCode || 500;
+  const isClientError = statusCode < 500;
+  
+  // In production, only show detailed error messages for client errors (4xx)
+  const clientSafeMessage = nodeEnv === 'production' && !isClientError
+    ? 'An unexpected error occurred. Please try again later.'
+    : safeMessage;
+
+  // Always create a clean response object without prototype methods
+  const response = {
+    success: false,
+    error: clientSafeMessage,
+    code: error.code || (isClientError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR'),
+    timestamp: new Date().toISOString()
+  };
+
+  // Log error details (more verbose in development)
   const errorDetails = {
     timestamp,
-    level: 'ERROR',
+    level: isClientError ? 'WARN' : 'ERROR',
     message: safeMessage,
     name: error.name || 'Error',
-    code: error.code || 'UNKNOWN_ERROR',
-    statusCode: error.statusCode || 500,
+    code: response.code,
+    statusCode,
     path: req.originalUrl,
     method: req.method,
-    ...(nodeEnv === 'development' && {
+    ...(nodeEnv !== 'production' && { 
       stack: error.stack,
-      error: {
-        ...error,
-        message: safeMessage,
-        // Remove any URL-like strings from the error object to prevent further issues
-        ...(error.message && { originalMessage: error.message })
-      }
+      ...(error.details && { details: error.details })
     })
   };
 
@@ -117,31 +145,13 @@ const errorHandler = (err, req, res, next) => {
   if (nodeEnv === 'development') {
     console.error('\x1b[31m', 'ERROR 💥', errorDetails);
   } else {
-    console.error(JSON.stringify(errorDetails));
+    // In production, only log full error details for server errors
+    console.error(JSON.stringify(isClientError 
+      ? { ...errorDetails, stack: undefined } 
+      : errorDetails));
   }
 
   // Send response to client
-  const statusCode = error.statusCode || 500;
-  const response = {
-    success: false,
-    error: statusCode >= 500 ? 'Internal Server Error' : (error.message || 'Something went wrong'),
-    code: error.code || 'INTERNAL_ERROR',
-    timestamp: new Date().toISOString()
-  };
-  
-  // Only include additional details for client errors (4xx)
-  if (statusCode < 500 && error.message) {
-    response.error = error.message;
-  }
-  
-  // Add debug info in development
-  if (nodeEnv === 'development') {
-    response.stack = error.stack;
-    if (error.details) {
-      response.details = error.details;
-    }
-  }
-  
   res.status(statusCode).json(response);
 };
 

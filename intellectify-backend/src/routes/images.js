@@ -7,7 +7,7 @@ const upload = require('../config/multerConfig');
 const router = express.Router();
 
 /**
- * @route POST /api/images/upload-temp
+ * @route POST /api/admin/content/images/upload-temp
  * @description Upload image to temporary location (for editor use before content is saved)
  * @access Private - Admin authentication required
  * @request

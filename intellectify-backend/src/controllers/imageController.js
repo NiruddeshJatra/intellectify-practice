@@ -1,5 +1,5 @@
-const imageService = require('../services/imageService');
-const AppError = require('../utils/AppError');
+const fileStorageService = require('../services/fileStorageService');
+const AppError = require('../utils/appError');
 
 /**
  * @description Upload image to temporary storage
@@ -13,7 +13,7 @@ const uploadTempImage = async (req, res, next) => {
     }
 
     // Save the file using image service
-    const savedFile = await imageService.saveImage({
+    const savedFile = await fileStorageService.saveImage({
       originalname: req.file.originalname,
       buffer: req.file.buffer,
       size: req.file.size,

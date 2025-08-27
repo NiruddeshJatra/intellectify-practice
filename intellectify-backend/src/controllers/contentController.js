@@ -1,5 +1,6 @@
 const contentService = require('../services/contentService');
-const AppError = require('../utils/AppError');
+const ResponseHelper = require('../utils/responseHelper');
+const ValidationHelper = require('../utils/validationHelper');
 
 class ContentController {
   /**
@@ -7,43 +8,10 @@ class ContentController {
    */
   async createContent(req, res, next) {
     try {
-      // Check if request body exists and has required fields
-      if (!req.body || Object.keys(req.body).length === 0) {
-        throw new AppError('Request body is empty. Please provide content data.', 400, 'VALIDATION_ERROR');
-      }
-
-      const { title, content, excerpt, category, subcategory, priority, metaTitle, metaDescription, status } = req.body;
-
-      // Input validation
-      if (!title || !content) {
-        throw new AppError('Title and content are required', 400, 'VALIDATION_ERROR');
-      }
+      // Validate content data using the service
+      const validatedData = await contentService.validateContent(req.body, false);
       
-
-      if (title.length > 200) {
-        throw new AppError('Title must be 200 characters or less', 400, 'VALIDATION_ERROR');
-      }
-
-      if (content.length > 100000) {
-        throw new AppError('Content must be 100,000 characters or less', 400, 'VALIDATION_ERROR');
-      }
-
-      // Validate priority if provided
-      if (priority !== undefined && (isNaN(priority) || priority < 0)) {
-        throw new AppError('Priority must be a non-negative number', 400, 'VALIDATION_ERROR');
-      }
-
-      // Validate category if provided
-      const validCategories = await contentService.getContentCategories();
-      if (category && !validCategories.includes(category)) {
-        throw new AppError('Invalid category', 400, 'INVALID_CATEGORY');
-      }
-
-      // Validate status (default to DRAFT if not provided)
-      const validStatus = status || 'DRAFT';
-      if (!['DRAFT', 'PUBLISHED'].includes(validStatus)) {
-        throw new AppError('Invalid status. Must be either DRAFT or PUBLISHED', 400, 'VALIDATION_ERROR');
-      }
+      const { title, content, excerpt, category, subcategory, priority, metaTitle, metaDescription, status } = validatedData;
 
       const newContent = await contentService.createContent(req.user.id, {
         title,
@@ -54,13 +22,10 @@ class ContentController {
         priority,
         metaTitle,
         metaDescription,
-        status: validStatus
+        status
       });
 
-      res.status(201).json({
-        success: true,
-        data: newContent
-      });
+      return ResponseHelper.created(res, newContent, 'Content created successfully');
     } catch (error) {
       next(error);
     }
@@ -73,17 +38,10 @@ class ContentController {
     try {
       // Use validated content ID from security middleware
       const contentId = req.validatedContentId || req.params.id;
-      const { title, content, excerpt, category, subcategory, priority, status, metaTitle, metaDescription } = req.body;
-
-      // Enhanced validation
-      if (status && !['DRAFT', 'PUBLISHED'].includes(status)) {
-        throw new AppError('Invalid status. Must be DRAFT or PUBLISHED', 400, 'VALIDATION_ERROR');
-      }
-
-      // Validate priority if provided
-      if (priority !== undefined && (isNaN(priority) || priority < 0)) {
-        throw new AppError('Priority must be a non-negative number', 400, 'VALIDATION_ERROR');
-      }
+      
+      // Validate content data using the service
+      const validatedData = await contentService.validateContent(req.body, true);
+      const { title, content, excerpt, category, subcategory, priority, status, metaTitle, metaDescription } = validatedData;
 
       const updatedContent = await contentService.updateContent(contentId, {
         title,
@@ -98,13 +56,10 @@ class ContentController {
       });
 
       if (!updatedContent) {
-        throw new AppError('Content not found', 404, 'NOT_FOUND');
+        return ResponseHelper.notFound(res, 'Content');
       }
 
-      res.status(200).json({
-        success: true,
-        data: updatedContent
-      });
+      return ResponseHelper.success(res, updatedContent, 'Content updated successfully');
     } catch (error) {
       next(error);
     }
@@ -120,13 +75,10 @@ class ContentController {
       const deleted = await contentService.deleteContent(contentId);
 
       if (!deleted) {
-        throw new AppError('Content not found', 404, 'NOT_FOUND');
+        return ResponseHelper.notFound(res, 'Content');
       }
 
-      res.status(200).json({
-        success: true,
-        message: 'Content deleted successfully'
-      });
+      return ResponseHelper.success(res, null, 'Content deleted successfully');
     } catch (error) {
       next(error);
     }
@@ -143,13 +95,10 @@ class ContentController {
       const content = await contentService.getContentById(contentId); // Include unpublished for admin
 
       if (!content) {
-        throw new AppError('Content not found', 404, 'NOT_FOUND');
+        return ResponseHelper.notFound(res, 'Content');
       }
 
-      res.status(200).json({
-        success: true,
-        data: content
-      });
+      return ResponseHelper.success(res, content);
     } catch (error) {
       next(error);
     }
@@ -169,11 +118,6 @@ class ContentController {
       const page = Math.max(1, parseInt(req.query.page) || 1);
       const limit = Math.min(parseInt(req.query.limit) || 10, 100); // Cap at 100 items per page
       const { status, category } = req.query;
-      
-      // Validate status if provided
-      if (status && !['DRAFT', 'PUBLISHED'].includes(status)) {
-        throw new AppError("Invalid status. Must be 'DRAFT' or 'PUBLISHED'", 400, 'VALIDATION_ERROR');
-      }
 
       const result = await contentService.getContentByAuthor({
         authorId: req.user.id,
@@ -183,13 +127,13 @@ class ContentController {
         category
       });
 
-      res.json({
-        success: true,
-        data: {
-          items: result.items,
-          pagination: result.pagination
-        }
-      });
+      return ResponseHelper.paginated(
+        res, 
+        result.items, 
+        result.pagination.currentPage, 
+        result.pagination.totalItems, 
+        result.pagination.itemsPerPage
+      );
     } catch (error) {
       next(error);
     }
@@ -206,19 +150,16 @@ class ContentController {
 
       // Validate status
       if (!status || !['DRAFT', 'PUBLISHED'].includes(status)) {
-        throw new AppError('Invalid status. Must be DRAFT or PUBLISHED', 400, 'VALIDATION_ERROR');
+        return ResponseHelper.validationError(res, 'Invalid status. Must be DRAFT or PUBLISHED');
       }
 
       const updatedContent = await contentService.updateContentStatus(contentId, status);
 
       if (!updatedContent) {
-        throw new AppError('Content not found', 404, 'NOT_FOUND');
+        return ResponseHelper.notFound(res, 'Content');
       }
 
-      res.status(200).json({
-        success: true,
-        data: updatedContent
-      });
+      return ResponseHelper.success(res, updatedContent, 'Content status updated successfully');
     } catch (error) {
       next(error);
     }
@@ -241,13 +182,13 @@ class ContentController {
         limit: limitNum
       });
 
-      res.json({
-        success: true,
-        data: {
-          items,
-          pagination
-        }
-      });
+      return ResponseHelper.paginated(
+        res, 
+        items, 
+        pagination.currentPage, 
+        pagination.totalItems, 
+        pagination.itemsPerPage
+      );
     } catch (error) {
       next(error);
     }
@@ -259,20 +200,22 @@ class ContentController {
   async getContentBySlug(req, res, next) {
     try {
       const { slug } = req.params;
+      
       if (!slug) {
-        throw new AppError('Slug is required', 400, 'VALIDATION_ERROR');
+        return ResponseHelper.validationError(res, 'Slug is required');
+      }
+
+      if (!ValidationHelper.isValidSlug(slug)) {
+        return ResponseHelper.validationError(res, 'Invalid slug format');
       }
 
       const content = await contentService.getContentBySlug(slug);
 
       if (!content) {
-        throw new AppError('Content not found', 404, 'NOT_FOUND');
+        return ResponseHelper.notFound(res, 'Content');
       }
 
-      res.status(200).json({
-        success: true,
-        data: content
-      });
+      return ResponseHelper.success(res, content);
     } catch (error) {
       next(error);
     }
@@ -284,11 +227,7 @@ class ContentController {
   async getContentCategories(req, res, next) {
     try {
       const categories = await contentService.getContentCategories();
-
-      res.status(200).json({
-        success: true,
-        data: categories
-      });
+      return ResponseHelper.success(res, categories);
     } catch (error) {
       next(error);
     }

@@ -4,7 +4,7 @@ const prisma = require('../config/database');
 const { google, github } = require('../config/oauth');
 const tokenService = require('./tokenService');
 const { OAuth2Client } = require('google-auth-library');
-const AppError = require('../utils/AppError');
+const AppError = require('../utils/appError');
 
 /**
  * Security Consideration: Multiple Active Sessions

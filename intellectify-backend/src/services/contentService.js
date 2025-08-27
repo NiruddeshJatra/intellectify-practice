@@ -1,55 +1,102 @@
 const prisma = require('../config/database');
-const imageService = require('./imageService');
-const AppError = require('../utils/AppError');
-const { Prisma, Category } = require('@prisma/client');
+const AppError = require('../utils/appError');
+const ValidationHelper = require('../utils/validationHelper');
+const SlugGenerator = require('./slugGenerator');
+const ImageManager = require('./contentImageService');
 
+/**
+ * Content Service - Main Content Management Service
+ * 
+ * This service handles all content-related operations including:
+ * - Content creation, updating, and deletion
+ * - Content validation
+ * - Image management and cleanup
+ * - Content retrieval with filtering and pagination
+ * - Status management (draft/published)
+ */
 class ContentService {
   /**
-   * Generate a URL-friendly slug from a title
-   * @param {string} title - The content title
-   * @returns {string} - URL-friendly slug
+   * Validate content data - simplified inline validation
+   * 
+   * @param {Object} data - Content data to validate
+   * @param {boolean} isUpdate - Whether this is an update operation
+   * @returns {Object} - Validated and processed content data
+   * @throws {AppError} - If validation fails
    */
-  generateSlug(title) {
-    return title
-      .toLowerCase()
-      .trim()
-      .replace(/[^\w\s-]/g, '') // Remove special characters
-      .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
-      .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
-  }
+  validateContent(data, isUpdate = false) {
+    const { title, content, category, priority, status, tags } = data;
 
-  /**
-   * Ensure slug is unique by appending a number if necessary
-   * @param {string} baseSlug - The base slug
-   * @param {string} excludeId - Content ID to exclude from uniqueness check
-   * @returns {Promise<string>} - Unique slug
-   */
-  async ensureUniqueSlug(baseSlug, excludeId = null) {
-    let slug = baseSlug;
-    let counter = 1;
-
-    while (true) {
-      const existing = await prisma.content.findFirst({
-        where: {
-          slug,
-          ...(excludeId && { id: { not: excludeId } }), // Finds any content that has this slug except the current content
-        },
-      });
-
-      if (!existing) {
-        return slug;
-      }
-
-      slug = `${baseSlug}-${counter}`;
-      counter++;
+    // Required field validation for creation
+    if (!isUpdate && (!title || !content)) {
+      throw new AppError('Title and content are required', 400, 'VALIDATION_ERROR');
     }
+
+    // Field length validations using ValidationHelper
+    if (title) {
+      const titleValidation = ValidationHelper.validateContentTitle(title);
+      if (!titleValidation.isValid) {
+        throw new AppError(titleValidation.error, 400, 'VALIDATION_ERROR');
+      }
+    }
+
+    if (content) {
+      const contentValidation = ValidationHelper.validateContentBody(content, 100000);
+      if (!contentValidation.isValid) {
+        throw new AppError(contentValidation.error, 400, 'VALIDATION_ERROR');
+      }
+    }
+
+    // Priority validation using ValidationHelper
+    if (priority !== undefined) {
+      const priorityValidation = ValidationHelper.validateNumberRange(priority, 0, Infinity);
+      if (!priorityValidation.isValid) {
+        throw new AppError('Priority must be a non-negative number', 400, 'VALIDATION_ERROR');
+      }
+    }
+
+    // Status validation
+    if (status && !['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(status)) {
+      throw new AppError('Invalid status. Must be DRAFT, PUBLISHED, or ARCHIVED', 400, 'VALIDATION_ERROR');
+    }
+
+    // Tags validation
+    if (tags && Array.isArray(tags)) {
+      if (tags.length > 10) {
+        throw new AppError('Maximum 10 tags allowed', 400, 'VALIDATION_ERROR');
+      }
+      tags.forEach(tag => {
+        if (typeof tag !== 'string' || tag.trim().length === 0) {
+          throw new AppError('All tags must be non-empty strings', 400, 'VALIDATION_ERROR');
+        }
+        if (tag.length > 50) {
+          throw new AppError('Each tag must be 50 characters or less', 400, 'VALIDATION_ERROR');
+        }
+      });
+    }
+
+    return {
+      title: title?.trim(),
+      content: content?.trim(),
+      category: category?.trim(),
+      priority: priority || 0,
+      status: status || 'DRAFT',
+      tags: tags || []
+    };
   }
 
   /**
-   * Create new content
+   * Create new content with automatic slug generation and image management
+   * 
+   * Process:
+   * 1. Extract content data from input
+   * 2. Generate unique URL-friendly slug from title
+   * 3. Create content record in database
+   * 4. Move temporary images to permanent location
+   * 5. Return created content with author information
+   * 
    * @param {string} authorId - ID of the content author
-   * @param {Object} contentData - Content data
-   * @returns {Promise<Object>} - Created content
+   * @param {Object} contentData - Content data including title, content, category, etc.
+   * @returns {Promise<Object>} - Created content with author information
    */
   async createContent(authorId, contentData) {
     const { 
@@ -64,9 +111,9 @@ class ContentService {
       status
     } = contentData;
 
-    // Generate unique slug
-    const baseSlug = this.generateSlug(title);
-    const slug = await this.ensureUniqueSlug(baseSlug); // We don't need to provide a content ID because this code is for creating new content, not updating existing content.
+    // Generate unique slug using SlugGenerator module
+    const baseSlug = SlugGenerator.generateSlug(title);
+    const slug = await SlugGenerator.ensureUniqueSlug(baseSlug);
 
     const newContent = await prisma.content.create({
       data: {
@@ -81,7 +128,8 @@ class ContentService {
         metaDescription,
         authorId,
         status,
-        ...(status === 'PUBLISHED' && { publishedAt: new Date() }) // Set publishedAt if status is PUBLISHED
+        // Set publishedAt if status is PUBLISHED
+        ...(status === 'PUBLISHED' && { publishedAt: new Date() })
       },
       include: {
         author: {
@@ -94,37 +142,28 @@ class ContentService {
       }
     });
 
-    // Move any temporary images to permanent location
-  try {
-    const imagePaths = imageService.extractImagePaths(newContent.content);
-    for (const imgPath of imagePaths) {
-      // Check if this is a temp image (from the temp uploads directory)
-      const tempPathPrefix = 'uploads/temp/';
-      if (imgPath.startsWith(tempPathPrefix)) {
-        const relativePath = imgPath.substring(tempPathPrefix.length);
-        await imageService.moveImageFromTemp(
-          relativePath,
-          category || 'GENERAL',
-          newContent.id
-        );
-      }
-    }
-  } catch (error) {
-    console.error('Error moving temporary images:', error);
-    // Don't fail content creation if image move fails
-  }
+    // Move any temporary images to permanent location using ImageManager
+    await ImageManager.moveTemporaryImages(newContent.content, category, newContent.id);
 
     return newContent;
   }
 
   /**
-   * Update existing content
+   * Update existing content with image management and slug regeneration
+   * 
+   * Process:
+   * 1. Retrieve existing content to compare changes
+   * 2. Handle image updates (move temp images, update paths, cleanup unused)
+   * 3. Generate new slug if title changed
+   * 4. Set publishedAt timestamp when publishing for first time
+   * 5. Update content record with new data
+   * 
    * @param {string} contentId - ID of content to update
    * @param {Object} contentData - Updated content data
-   * @returns {Promise<Object>} - Updated content
+   * @returns {Promise<Object>} - Updated content with author information
    */
   async updateContent(contentId, contentData) {
-    // First, get the existing content
+    // First, get the existing content to compare changes
     const existingContent = await prisma.content.findUnique({
       where: { id: contentId },
       select: {
@@ -146,147 +185,82 @@ class ContentService {
     const { title, excerpt, category, subcategory, priority, status, metaTitle, metaDescription } = contentData;
     let { content } = contentData;
 
-    // Move any new temporary images if added to permanent location and update content with new paths
-    let contentWithUpdatedPaths = content;
+    // Handle image updates using ImageManager
     if (content !== undefined) {
-      try {
-        const imagePaths = imageService.extractImagePaths(content);
-        for (const imgPath of imagePaths) {
-          // Check if this is a temp image (from the temp uploads directory)
-          const tempPathPrefix = 'uploads/temp/';
-          if (imgPath.startsWith(tempPathPrefix)) {
-            const relativePath = imgPath.substring(tempPathPrefix.length);
-            const newPath = await imageService.moveImageFromTemp(
-              relativePath,
-              category || existingContent.category || 'GENERAL',
-              contentId
-            );
-            
-            // Update the content with the new image path
-            if (newPath) {
-              const oldUrl = `/api/images/${imgPath}`;
-              const newUrl = `/api/images/${newPath}`;
-              contentWithUpdatedPaths = contentWithUpdatedPaths.replace(new RegExp(oldUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), newUrl);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error moving temporary images during update:', error);
-        // Don't fail update if image move fails
-      }
+      // Move any new temporary images and update content with new paths
+      content = await ImageManager.updateContentImages(
+        content, 
+        category || existingContent.category, 
+        contentId
+      );
+      
+      // Clean up images that are no longer used
+      await ImageManager.cleanupUnusedImages(existingContent.content, content, contentId);
     }
 
-    // Clean up unused images if content is being updated
-    if (content !== undefined && content !== existingContent.content) {
-      try {
-        // Extract and clean image paths for comparison
-        const extractAndCleanPaths = (html) => {
-          const paths = imageService.extractImagePaths(html);
-          return paths.map(path => {
-            // Remove the /api/images/ prefix if it exists
-            const cleanPath = path.replace(/^\/api\/images\//, '');
-            // Also handle the case where the path might be a full URL
-            return cleanPath.replace(/^https?:\/\/[^\/]+\/api\/images\//, '');
-          });
-        };
-        
-        const oldImages = extractAndCleanPaths(existingContent.content);
-        const newImages = extractAndCleanPaths(content);
-        
-        // Find images that were in old content but not in new content
-        const imagesToDelete = oldImages.filter(img => !newImages.includes(img));
-        
-        // Delete the unused images
-        const deleted = [];
-        for (let imgPath of imagesToDelete) {
-          try {
-            // Ensure we're not trying to delete temp files that might be in use
-            if (!imgPath.startsWith('uploads/temp/')) {
-              await imageService.deleteImage(imgPath);
-              deleted.push(imgPath);
-            }
-          } catch (error) {
-            console.error(`Failed to delete image ${imgPath}:`, error);
-          }
-        }
-        
-        if (deleted.length > 0) {
-          console.log(`Cleaned up ${deleted.length} unused images for content ${contentId}`);
-        }
-      } catch (error) {
-        console.error('Error during image cleanup:', error);
-        // Don't fail the update if image cleanup fails
-      }
-    }
-
-    // Generate new slug if title changed
-    let {slug} = existingContent;
+    // Generate new slug if title changed using SlugGenerator
+    let { slug } = existingContent;
     if (title && title !== existingContent.title) {
-      const baseSlug = this.generateSlug(title);
-      slug = await this.ensureUniqueSlug(baseSlug, contentId);
-    }
-    
-    // Use the updated content with new image paths if any were updated
-    if (content !== undefined) {
-      content = contentWithUpdatedPaths;
+      const baseSlug = SlugGenerator.generateSlug(title);
+      slug = await SlugGenerator.ensureUniqueSlug(baseSlug, contentId);
     }
 
     // Set publishedAt when publishing for the first time
-    let {publishedAt} = existingContent;
+    let { publishedAt } = existingContent;
     if (status === 'PUBLISHED' && existingContent.status === 'DRAFT' && !publishedAt) {
       publishedAt = new Date();
     }
 
     return await prisma.content.update({
-          where: { id: contentId },
-          data: {
-            ...(title && { title }),
-            ...(content !== undefined && { content }),
-            ...(excerpt !== undefined && { excerpt }),
-            ...(category !== undefined && { category }),
-            ...(subcategory !== undefined && { subcategory }),
-            ...(priority !== undefined && { priority: parseInt(priority) || 0 }),
-            ...(status && { status }),
-            ...(metaTitle !== undefined && { metaTitle }),
-            ...(metaDescription !== undefined && { metaDescription }),
-            slug,
-            ...(publishedAt && { publishedAt })
-          },
-          include: {
-            author: {
-              select: {
-                id: true,
-                name: true,
-                email: true
-              }
-            }
+      where: { id: contentId },
+      data: {
+        // Only update fields that are provided (using conditional spread)
+        ...(title && { title }),
+        ...(content !== undefined && { content }),
+        ...(excerpt !== undefined && { excerpt }),
+        ...(category !== undefined && { category }),
+        ...(subcategory !== undefined && { subcategory }),
+        ...(priority !== undefined && { priority: parseInt(priority) || 0 }),
+        ...(status && { status }),
+        ...(metaTitle !== undefined && { metaTitle }),
+        ...(metaDescription !== undefined && { metaDescription }),
+        slug,
+        ...(publishedAt && { publishedAt })
+      },
+      include: {
+        author: {
+          select: {
+            id: true,
+            name: true,
+            email: true
           }
-        });
+        }
+      }
+    });
   }
 
   /**
-   * Delete content
+   * Delete content and clean up associated images
+   * 
+   * Process:
+   * 1. Verify content exists
+   * 2. Clean up all associated images using ImageManager
+   * 3. Delete content record from database
+   * 
    * @param {string} contentId - ID of content to delete
    * @returns {Promise<boolean>} - Success status
    */
   async deleteContent(contentId) {
     const existingContent = await prisma.content.findUnique({
-      where: {
-        id: contentId,
-      }
+      where: { id: contentId }
     });
 
     if (!existingContent) {
       throw new AppError('Content not found', 404, 'CONTENT_NOT_FOUND');
     }
 
-    // Clean up associated images before deleting content
-    try {
-      await imageService.cleanupContentImages(contentId, existingContent.category || 'general');
-    } catch (error) {
-      console.error(`Warning: Failed to cleanup images for content ${contentId}:`, error);
-      // Continue with content deletion even if image cleanup fails
-    }
+    // Clean up associated images before deleting content using ImageManager
+    await ImageManager.cleanupContentImages(contentId, existingContent.category);
 
     await prisma.content.delete({
       where: { id: contentId }
@@ -496,11 +470,45 @@ class ContentService {
   }
 
   /**
-   * Get available content categories
+   * Get available content categories using ContentValidator
+   * 
+   * Delegates to ContentValidator to maintain consistency with validation logic.
+   * 
    * @returns {string[]} - Array of all available category enum values
    */
-  getContentCategories() {
-    return Object.values(Category);
+  /**
+   * Get all available content categories
+   * 
+   * @returns {string[]} - Array of all available category enum values
+   */
+  async getContentCategories() {
+    try {
+      // Get all unique categories from the database
+      const categories = await prisma.content.findMany({
+        distinct: ['category'],
+        select: {
+          category: true
+        },
+        where: {
+          status: 'PUBLISHED',
+          category: {
+            not: null
+          }
+        },
+        orderBy: {
+          category: 'asc'
+        }
+      });
+      
+      // Extract just the category strings and remove any null/undefined values
+      return categories
+        .map(item => item.category)
+        .filter(Boolean)
+        .sort();
+    } catch (error) {
+      console.error('Error fetching content categories:', error);
+      throw new AppError('Failed to fetch content categories', 500, 'CATEGORIES_FETCH_ERROR');
+    }
   }
 }
 

@@ -1,3 +1,5 @@
+const AppError = require('../utils/appError');
+
 /**
  * Categories of Errors in Express.js
  * 
@@ -31,8 +33,7 @@
  * @param {Function} next - Express next middleware function
  */
 
-const AppError = require('../utils/AppError');
-const { nodeEnv } = require('../config/oauth');
+const nodeEnv = process.env.NODE_ENV || 'development';
 
 const errorHandler = (err, req, res, next) => {
   const timestamp = new Date().toISOString();

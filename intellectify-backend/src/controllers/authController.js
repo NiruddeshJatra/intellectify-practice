@@ -2,7 +2,7 @@ const authService = require('../services/authService');
 const tokenService = require('../services/tokenService');
 const oauthStateService = require('../services/oauthStateService');
 const { frontendUrl } = require('../config/oauth');
-const AppError = require('../utils/AppError');
+const AppError = require('../utils/appError');
 
 /**
  * Handles Google One Tap authentication

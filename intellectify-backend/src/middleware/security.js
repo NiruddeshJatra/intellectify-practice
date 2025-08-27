@@ -2,7 +2,8 @@ const rateLimit = require('express-rate-limit');
 const DOMPurify = require('isomorphic-dompurify');
 const validator = require('validator');
 const prisma = require('../config/database');
-const AppError = require('../utils/AppError');
+const AppError = require('../utils/appError');
+const ValidationHelper = require('../utils/validationHelper');
 
 /**
  * Content ownership validation middleware
@@ -60,52 +61,48 @@ const sanitizeRichTextInput = (req, res, next) => {
     }
 
     // Sanitize content if it exists
-    if (req.body.content !== undefined && req.body.content !== null) {
-      if (typeof req.body.content === 'string') {
-        // Configure DOMPurify to allow safe HTML tags for rich text
-        const cleanContent = DOMPurify.sanitize(req.body.content, {
-          ADD_TAGS: ['iframe'],
-          ADD_ATTR: [
-            'allowfullscreen',
-            'frameborder',
-            'allow',
-            'loading',
-            'referrerpolicy',
-            'sandbox'
-          ],
-          ALLOWED_TAGS: [
-            'p', 'br', 'strong', 'em', 'u',
-            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-            'ul', 'ol', 'li', 'blockquote',
-            'a', 'img', 'figure', 'figcaption',
-            'table', 'thead', 'tbody', 'tr', 'th', 'td',
-            'div', 'span', 'iframe'
-          ],
-          ALLOWED_ATTR: [
-            'href', 'src', 'alt', 'title', 'class', 'id',
-            'style', 'width', 'height', 'target', 'rel',
-            'frameborder', 'allowfullscreen', 'allow',
-            'loading', 'referrerpolicy', 'sandbox',
-            'srcset', 'sizes', 'data-*', 'controls', 
-            'autoplay', 'loop', 'muted', 'poster'
-          ],
-          // Allow YouTube, Vimeo, and other common video embeds
-          ADD_URI_SAFE_ATTR: [
-            'allow',
-            'allowfullscreen',
-            'frameborder',
-            'referrerpolicy',
-            'sandbox'
-          ],
-          // Only allow iframes from trusted sources
-          ALLOWED_IFRAME_SRC: [
-            /^https?:\/\/(www\.)?(youtube\.com|youtu\.be|youtube-nocookie\.com)\/.*/i,
-            /^https?:\/\/(player\.vimeo\.com|vimeo\.com)\/.*/i,
-            /^https?:\/\/(www\.)?(dailymotion\.com|dai\.ly)\/.*/i
-          ]
-        });
-        req.body.content = cleanContent;
-      }
+    if (req.body.content !== undefined && req.body.content !== null && typeof req.body.content === 'string') {
+          const cleanContent = DOMPurify.sanitize(req.body.content, {
+            ADD_TAGS: ['iframe'],
+            ADD_ATTR: [
+              'allowfullscreen',
+              'frameborder',
+              'allow',
+              'loading',
+              'referrerpolicy',
+              'sandbox'
+            ],
+            ALLOWED_TAGS: [
+              'p', 'br', 'strong', 'em', 'u',
+              'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+              'ul', 'ol', 'li', 'blockquote',
+              'a', 'img', 'figure', 'figcaption',
+              'table', 'thead', 'tbody', 'tr', 'th', 'td',
+              'div', 'span', 'iframe'
+            ],
+            ALLOWED_ATTR: [
+              'href', 'src', 'alt', 'title', 'class', 'id',
+              'style', 'width', 'height', 'target', 'rel',
+              'frameborder', 'allowfullscreen', 'allow',
+              'loading', 'referrerpolicy', 'sandbox',
+              'srcset', 'sizes', 'data-*', 'controls', 
+              'autoplay', 'loop', 'muted', 'poster'
+            ],
+            // Allow YouTube, Vimeo, and other common video embeds
+            ADD_URI_SAFE_ATTR: [
+              'allow',
+              'allowfullscreen',
+              'frameborder',
+              'referrerpolicy',
+              'sandbox'
+            ],
+            // Only allow iframes from trusted sources
+            ALLOWED_IFRAME_SRC: [
+              /^https?:\/\/(www\.)?(youtube\.com|youtu\.be|youtube-nocookie\.com)\/.*/i,
+              /^https?:\/\/(player\.vimeo\.com|vimeo\.com)\/.*/i
+            ]
+          });
+          req.body.content = cleanContent;
     }
 
     // Sanitize other fields if they exist
@@ -150,22 +147,22 @@ exports.fileValidationConfig = {
 };
 
 /**
- * Validates the uploaded file's MIME type and extension
+ * Validates the uploaded file's MIME type and extension using ValidationHelper
  * @param {Object} file - Multer file object
  * @returns {Object} - { isValid: boolean, error: string }
  */
 const validateFileType = (file) => {
-  const { allowedMimeTypes, mimeTypeExtensions } = exports.fileValidationConfig;
-  
-  // Check if MIME type is allowed
-  if (!allowedMimeTypes.includes(file.mimetype)) {
+  // Use ValidationHelper for basic MIME type validation
+  if (!ValidationHelper.isValidImageType(file.mimetype)) {
+    const { allowedMimeTypes } = exports.fileValidationConfig;
     return { 
       isValid: false, 
       error: `Invalid file type. Allowed types: ${allowedMimeTypes.join(', ')}` 
     };
   }
 
-  // Check file extension against MIME type
+  // Additional extension validation for security
+  const { mimeTypeExtensions } = exports.fileValidationConfig;
   const fileExt = file.originalname.split('.').pop().toLowerCase();
   const validExtensions = mimeTypeExtensions[file.mimetype] || [];
   
@@ -193,10 +190,11 @@ const validateFileUpload = (req, res, next) => {
 
     const { maxFileSize } = exports.fileValidationConfig;
     
-    // Check file size
-    if (req.file.size > maxFileSize) {
+    // Check file size using ValidationHelper
+    const sizeValidation = ValidationHelper.validateFileSize(req.file.size, maxFileSize);
+    if (!sizeValidation.isValid) {
       return next(new AppError(
-        `File size too large. Maximum size is ${maxFileSize / (1024 * 1024)}MB.`,
+        sizeValidation.error,
         400,
         'FILE_TOO_LARGE'
       ));

@@ -37,7 +37,9 @@ const formatLog = (data, type = 'REQUEST') => {
  */
 const requestLogger = (req, res, next) => {
   // Skip logging for health checks
-  if (req.path === '/health') return next();
+  if (req.path === '/') {
+    return next();
+  }
 
   const start = Date.now();
   const { method, originalUrl, ip, body, query, params, headers } = req;
@@ -72,7 +74,7 @@ const requestLogger = (req, res, next) => {
   // Log response time and details
   res.on('finish', () => {
     const duration = Date.now() - start;
-    const responseBody = res.locals.responseBody;
+    const {responseBody} = res.locals;
     
     const responseLog = {
       timestamp: new Date().toISOString(),
